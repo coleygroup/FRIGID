@@ -1,0 +1,75 @@
+# Spec2Mol benchmark configuration for CANOPUS dataset
+# 
+# Usage:
+#   python scripts/benchmark_spec2mol.py --config configs/spec2mol_benchmark_canopus.yaml
+#
+# Key differences from MSG:
+#   - MIST encoder: hidden_size=256, magma_modulo=512 (Small Model)
+#   - Data paths point to CANOPUS dataset
+#   - Split file: canopus_hplus_100_0.tsv (test set: 819 samples)
+
+# CANOPUS data paths
+data:
+  datadir: "/path/to/data/canopus"
+  labels_file: "/path/to/data/canopus/labels.tsv"
+  split_file: "/path/to/data/canopus/splits/canopus_hplus_100_0.tsv"
+  spec_folder: "/path/to/data/canopus/spec_files"
+  subform_folder: "/path/to/data/canopus/subformulae/subformulae_default"
+
+# MIST encoder configuration
+mist_encoder:
+  checkpoint: "/path/to/checkpoints/mist_encoder.ckpt"
+  hidden_size: 512              # CANOPUS Small Model (MSG uses 512)
+  magma_modulo: 512             # CANOPUS Small Model (MSG uses 2048)
+  peak_attn_layers: 2
+  num_heads: 8
+  spectra_dropout: 0.1
+  output_size: 4096
+  form_embedder: "pos-cos"
+  set_pooling: "cls"
+  refine_layers: 4
+  pairwise_featurization: true
+  embed_instrument: false
+  inten_transform: "float"
+  inten_prob: 0.1
+  remove_prob: 0.5
+  cls_type: "ms1"
+  spec_features: "peakformula"
+  mol_features: "fingerprint"
+  top_layers: 1
+  max_peaks: null
+
+# DLM decoder (same as MSG - decoder is shared)
+dlm:
+  checkpoint: "/path/to/checkpoints/dlm.ckpt"
+
+# Fingerprint settings
+fingerprint:
+  bits: 4096
+  radius: 2
+  threshold: 0.187
+
+# Generation settings
+generation:
+  batch_size: 16
+  softmax_temp: 1.0
+  randomness: 10.0
+  top_k: 100
+
+# Formula filter settings
+formula_filter:
+  n_required: 10
+  max_attempts: 100
+
+# Evaluation settings
+evaluation:
+  split: "test"
+  max_spectra: null  # Test all samples in test set (803 samples)
+  metrics:
+    - accuracy
+    - tanimoto
+
+# Output settings
+output:
+  results_dir: "results/benchmarks_canopus"
+

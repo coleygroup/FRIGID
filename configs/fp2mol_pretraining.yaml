@@ -1,0 +1,189 @@
+# =============================================================================
+# SHARED CROSS-ATTENTION TRAINING CONFIG
+# =============================================================================
+# This configuration trains a FRIGID-base DLM with shared cross-attention layers
+# for joint formula + fingerprint conditioning. Formula and fingerprint 
+# embeddings are concatenated and passed through a single set of cross-attention
+# layers, which is more parameter-efficient than independent layers.
+#
+# Architecture:
+#   - Formula conditioning: cross-attention (atom embeddings)
+#   - Fingerprint conditioning: cross-attention (bit embeddings via set encoder)
+#   - Cross-attention mode: SHARED (concatenated embeddings)
+#
+# Usage:
+#   python scripts/train.py --config configs/fp2mol_pretraining.yaml
+# =============================================================================
+
+hydra:
+  run:
+    dir: results
+  job:
+    chdir: True
+
+data: 
+  use_safe_hf: True
+  hf_cache_dir: /path/to/data/safes/
+  exclude_inchikeys_file: /path/to/data/exclude_inchis.csv
+  remove_stereo: True
+
+wandb:
+  project: frigid
+  name: null
+
+# =============================================================================
+# WEIGHT LOADING (optional)
+# Load model weights from an existing checkpoint without resuming training state.
+# This is useful for fine-tuning or transfer learning.
+# =============================================================================
+load_weights_only: null # Path to checkpoint to load weights from (without optimizer/training state)
+load_weights_strict: False  # Whether to strictly match state_dict keys
+
+# =============================================================================
+# DATA LOADING
+# =============================================================================
+loader:
+  global_batch_size: 2048
+  batch_size: ${div_up:${.global_batch_size}, ${eval:${trainer.devices} * ${trainer.num_nodes}}}
+  num_workers: 28
+  pin_memory: True
+  resume_step: null
+
+# =============================================================================
+# OPTIMIZER
+# =============================================================================
+optim:
+  weight_decay: 0
+  lr: 0.0003
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1e-8
+
+# =============================================================================
+# TRAINER
+# =============================================================================
+trainer:
+  _target_: lightning.Trainer
+  accelerator: cuda
+  num_nodes: 1
+  devices: ${device_count:}
+  accumulate_grad_batches: ${div_up:${loader.global_batch_size}, ${eval:${trainer.devices} * ${loader.batch_size} * ${trainer.num_nodes}}}
+  gradient_clip_val: 1.0
+  precision: 'bf16'
+  max_steps: 500000
+  log_every_n_steps: 1000
+
+# =============================================================================
+# MODEL ARCHITECTURE
+# =============================================================================
+model:
+  # -------------------------------------------------------------------------
+  # BERT backbone configuration
+  # -------------------------------------------------------------------------
+  attention_probs_dropout_prob: 0.1
+  hidden_act: 'gelu'
+  hidden_dropout_prob: 0.1
+  hidden_size: 768
+  initializer_range: 0.02
+  intermediate_size: 3072
+  layer_norm_eps: 1e-12
+  max_position_embeddings: 256
+  model_type: 'bert'
+  num_attention_heads: 12
+  num_hidden_layers: 12
+  pad_token_id: 3
+  position_embedding_type: 'absolute'
+  torch_dtype: 'float32'
+  type_vocab_size: 2
+  use_cache: True
+  vocab_size: 1880
+
+  # -------------------------------------------------------------------------
+  # CROSS-ATTENTION MODE
+  # -------------------------------------------------------------------------
+  # When True: Formula and fingerprint embeddings are concatenated and passed
+  #            through a SINGLE set of cross-attention layers (more efficient)
+  # When False: Independent cross-attention layers for each modality
+  use_shared_cross_attention: True
+
+  # -------------------------------------------------------------------------
+  # FORMULA CONDITIONING
+  # -------------------------------------------------------------------------
+  use_formula_conditioning: True
+  formula_conditioner_type: 'cross_attention'  # Required for shared mode
+  formula_normalize: 'none'
+  formula_use_count_embedding: True  # Embed atom counts separately
+  formula_dropout_prob: 0.0  # Probability of dropping formula during training
+
+  # -------------------------------------------------------------------------
+  # FINGERPRINT CONDITIONING
+  # -------------------------------------------------------------------------
+  use_fingerprint_conditioning: True
+  fingerprint_conditioner_type: 'cross_attention'  # Required for shared mode
+  fingerprint_bits: 4096  # Morgan fingerprint length
+  fingerprint_radius: 2  # Morgan fingerprint radius (not used at training, just for reference)
+  fingerprint_seq_max_len: 256  # Max sequence length for set encoder output
+  fingerprint_num_self_attention_layers: 3  # Self-attention layers in set encoder
+  fingerprint_activation_threshold: 0.0  # Threshold for active bits (0 = use all)
+  fingerprint_dropout_prob: 0.25  # Probability of dropping fingerprint during training
+  fingerprint_flip_prob: 0.000
+
+  # -------------------------------------------------------------------------
+  # LEARNING RATE SCHEDULER
+  # -------------------------------------------------------------------------
+  lr_scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    T_max: 500000  # Should match trainer.max_steps
+    eta_min: 1e-8
+    warmup_steps: 50000  # Linear warmup from 0 to lr
+
+# =============================================================================
+# DIFFUSION / NOISE
+# =============================================================================
+noise:
+  type: loglinear
+
+# =============================================================================
+# TRAINING
+# =============================================================================
+training:
+  T: 0  # Continuous time diffusion
+  ema: 0.9999  # Exponential moving average decay
+  antithetic_sampling: True
+  sampling_eps: 1e-3
+  global_mean_loss: True  # Sum losses and divide by total tokens
+  use_bracket_safe: False
+  formula_loss_weight: 0.0
+
+# =============================================================================
+# CHECKPOINTING
+# =============================================================================
+callback:
+  _target_: lightning.pytorch.callbacks.ModelCheckpoint
+  dirpath: ${cwd:}/checkpoints
+  filename: '{step}'
+  save_top_k: -1  # Save all checkpoints
+  auto_insert_metric_name: False
+  enable_version_counter: False
+  every_n_train_steps: 5000
+
+# =============================================================================
+# VALIDATION CONFIGURATION
+# FP2Mol validation during training: generates molecules conditioned on
+# formula + fingerprint from a held-out CSV file and computes metrics.
+# =============================================================================
+validation:
+  enabled: False
+  csv_path: '/path/to/validation.csv'  # Path to CSV with 'smiles' column for validation
+  n_mols: 120  # Number of molecules to validate on (random subset with seed=42)
+  n_samples: 100  # Number of molecules to generate per target
+  n_steps: 5000  # Run validation every n_steps
+  softmax_temp: 1.0
+  randomness: 10.0
+  batch_size: ${div_up:${loader.global_batch_size}, ${eval:${trainer.devices} * ${trainer.num_nodes}}}
+  # Token length prediction (optional)
+  token_model: '/path/to/token_models/models/best_ngboost_MSG_pubchem.joblib'  # Path to token count model (.joblib)
+  sigma_lambda: 1.55  # NGBoost sigma multiplier
+  # Fingerprint settings (should match model config)
+  fp_bits: ${model.fingerprint_bits}
+  fp_radius: ${model.fingerprint_radius}
