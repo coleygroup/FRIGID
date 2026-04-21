@@ -178,12 +178,10 @@ python scripts/train.py --config configs/fp2mol_pretraining.yaml
 Key configuration options in `configs/fp2mol_pretraining.yaml`:
 - `data.hf_cache_dir`: path to the SAFE dataset (HuggingFace cache)
 - `data.exclude_inchikeys_file`: path to `data/exclude_inchikeys.csv` to mask test structures
-- `trainer.max_steps`: total optimization steps (default: 400,000)
-- `loader.global_batch_size`: global batch size (default: 128; scales across GPUs)
+- `trainer.max_steps`: total optimization steps (default: 500,000)
+- `loader.global_batch_size`: global batch size (default: 2048; scales across GPUs)
 - `model.hidden_size` / `model.num_hidden_layers`: BERT backbone dimensions
 - `training.ema`: EMA decay for parameter averaging (default: 0.9999)
-
-We provide pretrained checkpoints for the encoder/decoder/ICEBERG models [here](https://zenodo.org/records/19685145).
 
 ### 2. Training NGBoost Token Length Models
 
@@ -272,7 +270,7 @@ A two-stage model (fragment generator + intensity predictor) trained on bond-bre
 
 ## Pretrained Checkpoints
 
-Pretrained checkpoints for the FRIGID decoder, the MIST encoders for NPLIB1 and MassSpecGym, and the ICEBERG model trained on MassSpecGym data are available [here](https://zenodo.org/record/PLACEHOLDER).
+Pretrained checkpoints for the FRIGID decoder, the MIST encoders, and the ICEBERG models are available [here](https://zenodo.org/records/19685145).
 
 ## License
 
