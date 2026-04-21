@@ -183,6 +183,8 @@ Key configuration options in `configs/fp2mol_pretraining.yaml`:
 - `model.hidden_size` / `model.num_hidden_layers`: BERT backbone dimensions
 - `training.ema`: EMA decay for parameter averaging (default: 0.9999)
 
+We provide pretrained checkpoints for the encoder/decoder/ICEBERG models [here](https://zenodo.org/records/19685145).
+
 ### 2. Training NGBoost Token Length Models
 
 FRIGID-base requires an NGBoost model to predict SAFE sequence lengths from molecular formulae. See `token_models/README.md` for full details.
