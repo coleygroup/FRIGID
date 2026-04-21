@@ -262,7 +262,7 @@ The decoder is a 12-layer BERT Transformer (hidden size 768, 12 heads, FFN dimen
 
 ### MIST Encoder
 
-A FormulaTransformer-based encoder that maps MS/MS peak-formula pairs to 4096-bit Morgan fingerprint probabilities. Two variants are used: a larger model for MassSpecGym (`hidden_size=512, magma_modulo=2048`) and a smaller model for NPLIB1 (`hidden_size=512, magma_modulo=512`).
+A FormulaTransformer-based encoder that maps MS/MS peak-formula pairs to 4096-bit Morgan fingerprint probabilities.
 
 ### ICEBERG Forward Model
 
@@ -287,13 +287,13 @@ If you have any questions, please reach out to mbohde@tamu.edu or liuhx25@mit.ed
 If you find this codebase useful in your research, please kindly cite the following manuscript:
 ```bibtex
 @misc{frigid2026,
-  title         = {FRIGID: Scaling Diffusion-Based Molecular Generation from Mass Spectra at Training and Inference Time},
-  author        = {Montgomery Bohde and Hongxuan Liu and Mrunali Manjrekar and Magdalena Lederbauer and Shuiwang Ji and Runzhong Wang and Connor W. Coley},
-  year          = {2026},
-  eprint        = {XXXX.XXXXX},
-  archivePrefix = {arXiv},
-  primaryClass  = {q-bio.QM},
-  url           = {https://arxiv.org/abs/XXXX.XXXXX}
+      title={FRIGID: Scaling Diffusion-Based Molecular Generation from Mass Spectra at Training and Inference Time}, 
+      author={Montgomery Bohde and Hongxuan Liu and Mrunali Manjrekar and Magdalena Lederbauer and Shuiwang Ji and Runzhong Wang and Connor W. Coley},
+      year={2026},
+      eprint={2604.16648},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2604.16648}, 
 }
 ```
 
