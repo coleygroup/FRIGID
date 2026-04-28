@@ -35,10 +35,11 @@ from rdkit import Chem
 from rdkit import DataStructs
 from rdkit.Chem import AllChem, rdMolDescriptors, Descriptors
 
-# Ensure ms-pred-dev is importable
-ms_pred_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), 'ms-pred-dev')
-if os.path.exists(ms_pred_path) and ms_pred_path not in sys.path:
-    sys.path.insert(0, ms_pred_path)
+# Ensure the repo-local ms-pred submodule is importable when not installed.
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ms_pred_src_path = os.path.join(project_root, 'ms-pred', 'src')
+if os.path.exists(ms_pred_src_path) and ms_pred_src_path not in sys.path:
+    sys.path.insert(0, ms_pred_src_path)
 
 import ms_pred.common as common
 from ms_pred.dag_pred.iceberg_elucidation import iceberg_prediction, load_real_spec

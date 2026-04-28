@@ -10,10 +10,10 @@ pip install lightning==2.5.1 transformers==4.56.2 hydra-core==1.3.2 omegaconf==2
     safe-mol==0.1.13 pytdc==0.4.1 easydict openbabel-wheel==3.1.1.22 \
     bionemo-moco==0.0.2.1 einops==0.7.0 jaxtyping>=0.2.34
 
-pip install -r ms-pred-dev/requirements.txt
-pip install -e ./frigid --no-deps
-pip install -e ./ms-pred-dev
+pip install -r ms-pred/requirements.txt
+pip install -e ./ms-pred
+pip install -e . --no-deps
 
-bash frigid/env/fix_safe_imports.sh
+bash env/fix_safe_imports.sh
 
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH

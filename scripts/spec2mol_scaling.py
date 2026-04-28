@@ -50,10 +50,10 @@ src_path = os.path.join(project_root, 'src')
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
-# Add ms-pred-dev to path
-ms_pred_path = os.path.join(os.path.dirname(project_root), 'ms-pred-dev')
-if os.path.exists(ms_pred_path) and ms_pred_path not in sys.path:
-    sys.path.insert(0, ms_pred_path)
+# Add the repo-local ms-pred submodule to the import path when not installed.
+ms_pred_src_path = os.path.join(project_root, 'ms-pred', 'src')
+if os.path.exists(ms_pred_src_path) and ms_pred_src_path not in sys.path:
+    sys.path.insert(0, ms_pred_src_path)
 
 from dlm.sampler import Sampler
 from dlm.iceberg_sampler import IcebergSampler, IcebergConfig, ScalingConfig, normalize_instrument_type

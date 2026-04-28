@@ -37,7 +37,7 @@ mist_encoder:
   spec_features: "peakformula"
   mol_features: "fingerprint"
   top_layers: 1
-  max_peaks: 10
+  max_peaks: null
 
 # DLM decoder (same as CANOPUS - decoder is shared)
 dlm:

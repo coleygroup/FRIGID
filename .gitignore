@@ -35,7 +35,6 @@ tmp/*
 exp/*
 dev.sh
 dive*
-ms-pred-dev/
 mist_sim*
 notebooks/*
 paper/*

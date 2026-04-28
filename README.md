@@ -104,9 +104,7 @@ frigid/
 │       │   └── modules.py              # FormulaTransformer, attention blocks
 │       └── data/
 │
-├── ms-pred-dev/                        # ICEBERG forward model (git submodule)
-│   └── src/ms_pred/dag_pred/
-│       └── iceberg_elucidation.py
+├── ms-pred/                            # ICEBERG forward model (git submodule)
 │
 ├── scripts/
 │   ├── train.py                        # FRIGID-base pretraining
@@ -152,11 +150,16 @@ frigid/
 git clone --recurse-submodules <repo-url>
 cd frigid
 
+# If you cloned without --recurse-submodules
+git submodule update --init --recursive
+
 # Create conda environment
 conda create -n frigid python=3.10
 conda activate frigid
 
 # Install dependencies
+pip install -r ms-pred/requirements.txt
+pip install -e ./ms-pred
 pip install -e .
 
 # (Optional) Install optuna for training NGBoost token models
