@@ -1,0 +1,3 @@
+[submodule "ms-pred"]
+	path = ms-pred
+	url = https://github.com/coleygroup/ms-pred.git
