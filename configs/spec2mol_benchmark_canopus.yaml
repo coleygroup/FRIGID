@@ -19,7 +19,7 @@ data:
 # MIST encoder configuration
 mist_encoder:
   checkpoint: "/path/to/checkpoints/mist_encoder.ckpt"
-  hidden_size: 512              # CANOPUS Small Model (MSG uses 512)
+  hidden_size: 512              # CANOPUS Small Model (MSG uses 640)
   magma_modulo: 512             # CANOPUS Small Model (MSG uses 2048)
   peak_attn_layers: 2
   num_heads: 8
