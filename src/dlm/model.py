@@ -258,9 +258,9 @@ class DLM(L.LightningModule):
             # Decode token to string
             token_str = self.tokenizer.decode([token_id])
             
-            # Parse atoms from token string
+            # Parse atoms from token string (SMILES/SAFE fragment, not Hill formula)
             try:
-                counts = encoder.formula_to_counts(token_str)
+                counts = encoder.parse_atoms_from_smiles(token_str)
                 # Convert to vector with NO normalization (raw integers)
                 count_vector = encoder.counts_to_vector(counts, normalize='none')
                 token_atom_counts[token_id] = count_vector
@@ -297,14 +297,17 @@ class DLM(L.LightningModule):
             
             if unsafe_missing:
                 # There are genuinely missing keys, use strict mode
-                return super().load_state_dict(state_dict, strict=True, assign=assign)
+                incompatible = super().load_state_dict(state_dict, strict=True, assign=assign)
             else:
                 # Only safe buffers are missing, use non-strict mode
                 if missing_keys & safe_missing_buffers:
                     print(f"[DLM] Loading checkpoint with missing buffers (safe to skip): {missing_keys & safe_missing_buffers}")
-                return super().load_state_dict(state_dict, strict=False, assign=assign)
+                incompatible = super().load_state_dict(state_dict, strict=False, assign=assign)
         else:
-            return super().load_state_dict(state_dict, strict=False, assign=assign)
+            incompatible = super().load_state_dict(state_dict, strict=False, assign=assign)
+        # Recompute: older checkpoints persist pre-fix token_atom_counts (formula regex).
+        self._setup_token_atom_counts()
+        return incompatible
 
     def on_load_checkpoint(self, checkpoint):
         if self.ema:

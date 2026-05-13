@@ -34,6 +34,13 @@ class FormulaEncoder:
         'B', 'Si', 'Se', 'As', 'Al', 'Sn', 'Li', 'Na', 'K', 'Mg',
         'Ca', 'Fe', 'Zn', 'Cu', 'Mn', 'Co', 'Ni', 'Pt', 'Pd', 'Au'
     ]
+
+    # Longest-first two-letter symbols so e.g. "Cl" wins at a "Cl..." prefix.
+    _SMILES_TWO_LETTER = tuple(
+        sorted((a for a in ATOM_VOCAB if len(a) == 2), key=len, reverse=True)
+    )
+    _SMILES_SINGLE = frozenset(a for a in ATOM_VOCAB if len(a) == 1)
+    _AROMATIC_TO_UPPER = {'c': 'C', 'n': 'N', 'o': 'O', 's': 'S', 'p': 'P'}
     
     def __init__(self, normalize: str = 'none'):
         """
@@ -90,6 +97,68 @@ class FormulaEncoder:
                 else:
                     counts[element] = count_val
         
+        return counts
+
+    def parse_atoms_from_smiles(self, smi: str) -> Dict[str, int]:
+        """
+        Count heavy atoms and explicit hydrogens from bracket notation in a SMILES
+        (or SAFE/BPE) fragment.
+
+        Unlike ``formula_to_counts``, this handles lowercase aromatic symbols
+        (c, n, o, s, p), bracket atoms with explicit H counts (e.g. ``[NH4+]``,
+        ``[CH3]``, ``[nH]``), and treats digits and SMILES punctuation as
+        non-element (ring closures are skipped, not interpreted as counts).
+
+        Element symbols are canonicalised to ``ATOM_VOCAB`` casing (aromatic
+        ``c`` -> ``C``, etc.).
+        """
+        if not smi:
+            return {}
+
+        counts: Dict[str, int] = {}
+        i, n = 0, len(smi)
+        in_bracket = False
+
+        while i < n:
+            ch = smi[i]
+            if ch == '[':
+                in_bracket = True
+                i += 1
+                continue
+            if ch == ']':
+                in_bracket = False
+                i += 1
+                continue
+            if ch.isdigit() or ch in '()=#@-+/\\.%':
+                i += 1
+                continue
+
+            matched = None
+            consumed = 0
+            for elem in self._SMILES_TWO_LETTER:
+                if smi.startswith(elem, i):
+                    matched, consumed = elem, len(elem)
+                    break
+            if matched is None:
+                if ch.isupper() and ch in self._SMILES_SINGLE:
+                    matched, consumed = ch, 1
+                elif ch in self._AROMATIC_TO_UPPER:
+                    matched, consumed = self._AROMATIC_TO_UPPER[ch], 1
+                else:
+                    i += 1
+                    continue
+
+            counts[matched] = counts.get(matched, 0) + 1
+            i += consumed
+
+            if in_bracket and i < n and smi[i] in 'Hh':
+                i += 1
+                h_count = 0
+                while i < n and smi[i].isdigit():
+                    h_count = h_count * 10 + int(smi[i])
+                    i += 1
+                counts['H'] = counts.get('H', 0) + (h_count if h_count > 0 else 1)
+
         return counts
     
     def counts_to_vector(self, counts: Dict[str, int], 
