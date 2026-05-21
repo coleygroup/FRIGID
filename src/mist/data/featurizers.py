@@ -1,73 +1,56 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+featurizers.py
 
-"""Featurizers for spectra and molecules in MIST encoder."""
-
+Hold featurizers & collate fns for various spectra and molecules in a single
+file
+"""
+import os
 from pathlib import Path
 import logging
 from abc import ABC, abstractmethod
 from typing import List, Dict, Callable
-import json
+import pickle
 
+import h5py
+
+import json
 import pandas as pd
 import numpy as np
 import torch
-import torch.nn.functional as F
+from tqdm import tqdm
 
-
-from rdkit import Chem
 from rdkit.Chem import AllChem, DataStructs
-from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
-from rdkit.Chem.rdchem import BondType as BT
+from rdkit.Chem import rdFingerprintGenerator
+from rdkit.Chem.rdMolDescriptors import GetMACCSKeysFingerprint
 
-from .. import utils
-from . import data
-
-# Atom and bond type mappings for graph featurization
-ATOM_DECODER = ['C', 'O', 'P', 'N', 'S', 'Cl', 'F', 'H']
-ATOM_TYPES = {atom: i for i, atom in enumerate(ATOM_DECODER)}
-BOND_TYPES = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
+from mist import utils
+from mist.data import data
 
 
 def get_mol_featurizer(mol_features, **kwargs):
-    """Get molecule featurizer by name."""
-    return {
-        "none": NoneFeaturizer,
-        "fingerprint": FingerprintFeaturizer,
-    }[mol_features](**kwargs)
+    return {"none": NoneFeaturizer, "fingerprint": FingerprintFeaturizer,}[
+        mol_features
+    ](**kwargs)
 
 
 def get_spec_featurizer(spec_features, **kwargs):
-    """Get spectra featurizer by name."""
     return {
         "none": NoneFeaturizer,
+        "binned": BinnedFeaturizer,
+        "mz_xformer": MZFeaturizer,
         "peakformula": PeakFormula,
     }[spec_features](**kwargs)
 
 
 def get_paired_featurizer(spec_features, mol_features, **kwargs):
-    """Create paired featurizer for spectra and molecules.
+    """get_paired_featurizer.
 
     Args:
-        spec_features: Spectra featurizer type
-        mol_features: Molecule featurizer type
-        **kwargs: Additional arguments
+        spec_features (str): Spec featurizer
+        mol_features (str): Mol featurizer
 
-    Returns:
-        PairedFeaturizer instance
     """
+
     mol_featurizer = get_mol_featurizer(mol_features, **kwargs)
     spec_featurizer = get_spec_featurizer(spec_features, **kwargs)
     paired_featurizer = PairedFeaturizer(spec_featurizer, mol_featurizer, **kwargs)
@@ -75,73 +58,53 @@ def get_paired_featurizer(spec_features, mol_features, **kwargs):
 
 
 class PairedFeaturizer(object):
-    """Featurizer for paired spectra and molecule data."""
+    """PairedFeaturizer"""
 
-    def __init__(self, spec_featurizer, mol_featurizer, graph_featurizer=None, **kwarg):
+    def __init__(self, spec_featurizer, mol_featurizer, **kwarg):
+        """__init__."""
         self.spec_featurizer = spec_featurizer
         self.mol_featurizer = mol_featurizer
-        self.graph_featurizer = graph_featurizer
 
     def featurize_mol(self, mol: data.Mol, **kwargs) -> Dict:
-        """Featurize a molecule."""
         return self.mol_featurizer.featurize(mol, **kwargs)
 
     def featurize_spec(self, mol: data.Mol, **kwargs) -> Dict:
-        """Featurize a spectrum."""
         return self.spec_featurizer.featurize(mol, **kwargs)
 
-    def featurize_graph(self, mol: data.Mol, **kwargs):
-        """Featurize a molecule as a graph."""
-        if self.graph_featurizer is not None:
-            return self.graph_featurizer.featurize(mol, **kwargs)
-        return None
-
     def get_mol_collate(self) -> Callable:
-        """Get molecule collate function."""
         return self.mol_featurizer.collate_fn
 
     def get_spec_collate(self) -> Callable:
-        """Get spectra collate function."""
         return self.spec_featurizer.collate_fn
 
-    def get_graph_collate(self) -> Callable:
-        """Get graph collate function."""
-        if self.graph_featurizer is not None:
-            return self.graph_featurizer.collate_fn
-        return None
-
     def set_spec_featurizer(self, spec_featurizer):
-        """Set spectra featurizer."""
         self.spec_featurizer = spec_featurizer
 
     def set_mol_featurizer(self, mol_featurizer):
-        """Set molecule featurizer."""
         self.mol_featurizer = mol_featurizer
-
-    def set_graph_featurizer(self, graph_featurizer):
-        """Set graph featurizer."""
-        self.graph_featurizer = graph_featurizer
 
 
 class Featurizer(ABC):
-    """Abstract base class for featurizers."""
+    """Featurizer"""
 
-    def __init__(self, cache_featurizers: bool = False, **kwargs):
+    def __init__(
+        self, cache_featurizers: bool = False, **kwargs
+    ):
         super().__init__()
         self.cache_featurizers = cache_featurizers
         self.cache = {}
 
     @abstractmethod
     def _encode(self, obj: object) -> str:
-        """Encode object into a string representation."""
+        """Encode object into a string representation"""
         raise NotImplementedError()
 
     def _featurize(self, obj: object) -> Dict:
-        """Internal featurize class that does not utilize the cache."""
-        return {}
+        """Internal featurize class that does not utilize the cache"""
+        raise {}
 
     def featurize(self, obj: object, train_mode=False, **kwargs) -> Dict:
-        """Featurize a single object."""
+        """Featurizer a single object"""
         encoded_obj = self._encode(obj)
 
         if self.cache_featurizers:
@@ -157,7 +120,7 @@ class Featurizer(ABC):
 
 
 class NoneFeaturizer(Featurizer):
-    """Null featurizer that returns empty dict."""
+    """NoneFeaturizer"""
 
     def _encode(self, obj) -> str:
         return ""
@@ -167,90 +130,184 @@ class NoneFeaturizer(Featurizer):
         return {}
 
     def featurize(self, *args, **kwargs) -> Dict:
+        """Override featurize with empty dict return"""
         return {}
 
 
 class MolFeaturizer(Featurizer):
-    """Base class for molecule featurizers."""
+    """MolFeaturizer"""
 
     def _encode(self, mol: data.Mol) -> str:
-        """Encode mol into SMILES repr."""
+        """Encode mol into smiles repr"""
         smi = mol.get_smiles()
         return smi
 
 
 class SpecFeaturizer(Featurizer):
-    """Base class for spectra featurizers."""
+    """SpecFeaturizer"""
 
     def _encode(self, spec: data.Spectra) -> str:
-        """Encode spectra into name."""
+        """Encode spectra into name"""
         return spec.get_spec_name()
 
-
 class FingerprintFeaturizer(MolFeaturizer):
-    """Featurizer for molecular fingerprints.
-
-    Computes various molecular fingerprints including Morgan fingerprints.
-
-    Args:
-        fp_names: List of fingerprint types to compute
-        fp_file: Optional file with precomputed fingerprints
-    """
+    """MolFeaturizer"""
 
     def __init__(self, fp_names: List[str], fp_file: str = None, **kwargs):
+        """__init__
+
+        Args:
+            fp_names (List[str]): List of
+            nbits (int): Number of bits
+            fp_file (str): Saved fp file
+
+        """
         super().__init__(**kwargs)
         self._fp_cache = {}
         self._morgan_projection = np.random.randn(50, 2048)
+        
+        # define morgan generators
+        self._morgan_256 = rdFingerprintGenerator.GetMorganGenerator(radius=2,fpSize=256)
+        self._morgan_512 = rdFingerprintGenerator.GetMorganGenerator(radius=2,fpSize=512)
+        self._morgan_1024 = rdFingerprintGenerator.GetMorganGenerator(radius=2,fpSize=1024)
+        self._morgan_2048 = rdFingerprintGenerator.GetMorganGenerator(radius=2,fpSize=2048)
+        self._morgan_4096 = rdFingerprintGenerator.GetMorganGenerator(radius=2,fpSize=4096)
+        self._morgan_4096_r3 = rdFingerprintGenerator.GetMorganGenerator(radius=3,fpSize=4096)
+
         self.fp_names = fp_names
         self.fp_file = fp_file
 
+        # Only for csi fp
+        self._root_dir = Path().resolve()    
+
     @staticmethod
     def collate_fn(mols: List[dict]) -> dict:
-        """Collate fingerprints into batch."""
         fp_ar = torch.tensor(np.array(mols))
         return {"mols": fp_ar}
 
     def featurize_smiles(self, smiles: str, **kwargs) -> np.ndarray:
-        """Featurize a SMILES string."""
+        """featurize_smiles.
+
+        Args:
+            smiles (str): smiles
+            kwargs:
+
+        Returns:
+            Dict:
+        """
+
         mol_obj = data.Mol.MolFromSmiles(smiles)
         return self._featurize(mol_obj)
 
     def _featurize(self, mol: data.Mol, **kwargs) -> Dict:
-        """Compute fingerprint for molecule."""
+        """featurize.
+
+        Args:
+            mol (Mol)
+
+        """
         fp_list = []
         for fp_name in self.fp_names:
+            # Get all fingerprint bits
             fingerprint = self._get_fingerprint(mol, fp_name)
             fp_list.append(fingerprint)
 
         fp = np.concatenate(fp_list)
         return fp
 
-    def _get_morgan_fp_base(self, mol: data.Mol, nbits: int = 2048, radius=2):
-        """Get Morgan fingerprint."""
-        def fp_fn(m):
-            return AllChem.GetMorganFingerprintAsBitVect(m, radius, nBits=nbits)
+    def _get_morgan_2048(self, mol: data.Mol):
+        """get morgan fingeprprint"""
+        return self._morgan_2048.GetFingerprint(mol.mol)
 
+    def _get_morgan_projection(self, mol: data.Mol):
+        """get morgan fingeprprint"""
+
+        morgan_fp = self._get_morgan_2048(mol)
+
+        output_fp = np.einsum("ij,j->i", self._morgan_projection, morgan_fp)
+        return output_fp
+
+    def _get_morgan_1024(self, mol: data.Mol):
+        """get morgan fingeprprint"""
+        return self._morgan_1024.GetFingerprint(mol.mol)
+
+    def _get_morgan_512(self, mol: data.Mol):
+        """get morgan fingeprprint"""
+        return self._morgan_512.GetFingerprint(mol.mol)
+
+    def _get_morgan_256(self, mol: data.Mol):
+        """get morgan fingeprprint"""
+        return self._morgan_256.GetFingerprint(mol.mol)
+
+    def _get_morgan_4096(self, mol: data.Mol):
+        """get morgan fingeprprint"""
+        return self._morgan_4096.GetFingerprint(mol.mol)
+
+    def _get_morgan_4096_3(self, mol: data.Mol):
+        """get morgan fingeprprint"""
+        return self._morgan_4096_r3.GetFingerprint(mol.mol)
+
+    def _get_maccs(self, mol: data.Mol):
+        """get maccs fingerprint"""
         mol = mol.get_rdkit_mol()
-        fingerprint = fp_fn(mol)
+        fingerprint = GetMACCSKeysFingerprint(mol)
         array = np.zeros((0,), dtype=np.int8)
         DataStructs.ConvertToNumpyArray(fingerprint, array)
         return array
 
-    def _get_morgan_2048(self, mol: data.Mol):
-        return self._get_morgan_fp_base(mol, nbits=2048)
+    def _fill_precomputed_cache_hdf5(self, fp_file):
+        """Get precomputed fp cache"""
+        if fp_file not in self._fp_cache:
+            if not Path(fp_file).exists():
+                raise ValueError(f"Cannot find file {fp_file}")
 
-    def _get_morgan_4096(self, mol: data.Mol):
-        return self._get_morgan_fp_base(mol, nbits=4096)
+            # Then get hdf5
+            logging.info("Loading h5 features")
+            dataset = h5py.File(fp_file, "r")
+            logging.info("Stored in fp_cache")
+            index = {
+                i.decode(): ind for ind, i in enumerate(np.array(dataset["ikeys"]))
+            }
+            num_bits = dataset.attrs["num_bits"]
+            self._fp_cache[fp_file] = {
+                "index": index,
+                "features": dataset["features"],
+                "num_bits": num_bits,
+            }
+
+    def _get_precomputed_hdf5(self, mol, fp_file):
+        """Get precomputed hdf5 of a single molecule"""
+        self._fill_precomputed_cache_hdf5(fp_file)
+        cache_obj = self._fp_cache[fp_file]
+        index = cache_obj["index"]
+        feats = cache_obj["features"]
+        inchikey = mol.get_inchikey()
+        if inchikey in index:
+            num_bits = cache_obj["num_bits"]
+            out_vec = utils.unpack_bits(feats[index[inchikey]], num_bits=num_bits)
+            return out_vec
+        else:
+            num_bits = cache_obj["num_bits"]
+            logging.info(f"Unable to find inchikey {inchikey} in {fp_file}")
+            # Create empty vector
+            return np.zeros(num_bits)
+
+    def _get_csi(self, mol):
+        return self._get_precomputed_hdf5(mol, self.fp_file)
 
     @classmethod
     def get_fingerprint_size(cls, fp_names: list = [], **kwargs):
-        """Get total fingerprint size for given types."""
+        """Get list of fingerprint size"""
         fp_name_to_bits = {
             "morgan256": 256,
             "morgan512": 512,
             "morgan1024": 1024,
             "morgan2048": 2048,
+            "morgan_project": 50,
             "morgan4096": 4096,
+            "morgan4096_3": 4096,
+            "maccs": 167,
+            "csi": 5496,
         }
         num_bits = 0
         for fp_name in fp_names:
@@ -258,66 +315,296 @@ class FingerprintFeaturizer(MolFeaturizer):
         return num_bits
 
     def _get_fingerprint(self, mol: data.Mol, fp_name: str):
-        """Get fingerprint by name."""
+        """_get_fingerprint_fn"""
         return {
+            "morgan256": self._get_morgan_256,
+            "morgan512": self._get_morgan_512,
+            "morgan1024": self._get_morgan_1024,
             "morgan2048": self._get_morgan_2048,
+            "morgan_project": self._get_morgan_projection,
             "morgan4096": self._get_morgan_4096,
+            "morgan4096_3": self._get_morgan_4096_3,
+            "maccs": self._get_maccs,
+            "csi": self._get_csi,
         }[fp_name](mol)
+
+    def dist(self, mol_1, mol_2) -> np.ndarray:
+        """Return 2048 bit molecular fingerprint"""
+        fp1 = self.featurize(mol_1)
+        fp2 = self.featurize(mol_2)
+        tani = 1 - (((fp1 & fp2).sum()) / (fp1 | fp2).sum())
+        return tani
+
+    def dist_batch(self, mol_list) -> np.ndarray:
+        """Return 2048 bit molecular fingerprint"""
+
+        fps = []
+        if len(mol_list) == 0:
+            return np.array([[]])
+
+        for mol_temp in mol_list:
+            fps.append(self.featurize(mol_temp))
+
+        fps = np.vstack(fps)
+
+        fps_a = fps[:, None, :]
+        fps_b = fps[None, :, :]
+
+        intersect = (fps_a & fps_b).sum(-1)
+        union = (fps_a | fps_b).sum(-1)
+        tani = 1 - intersect / union
+        return tani
+
+    def dist_one_to_many(self, mol, mol_list) -> np.ndarray:
+        """Return 2048 bit molecular fingerprint"""
+
+        fps = []
+        if len(mol_list) == 0:
+            return np.array([[]])
+
+        for mol_temp in mol_list:
+            fps.append(self.featurize(mol_temp))
+
+        fp_a = self.featurize(mol)
+
+        fps = np.vstack(fps)
+
+        fps_a = fp_a[None, :]
+        fps_b = fps
+
+        intersect = (fps_a & fps_b).sum(-1)
+        union = (fps_a | fps_b).sum(-1)
+
+        # Compute dist
+        tani = 1 - intersect / union
+        return tani
+
+
+class BinnedFeaturizer(SpecFeaturizer):
+    """BinnedFeaturizer"""
+
+    def __init__(
+        self,
+        upper_limit: int = 1500,
+        num_bins: int = 2000,
+        base_folder: str = "data/paired_spectra",
+        **kwargs,
+    ):
+        """__init__"""
+        raise NotImplementedError()
+        super().__init__(**kwargs)
+        self.upper_limit = upper_limit
+        self.num_bins = num_bins
+
+    @staticmethod
+    def collate_fn(input_list: List[dict]) -> Dict:
+        """collate_fn.
+
+        Input list of dataset outputs
+
+        Args:
+            input_list (List[Spectra]): Input list containing spectra to be
+                collated
+        Return:
+            Dictionary containing batched results and list of how many channels are
+            in each tensor
+        """
+        raise NotImplementedError()
+        # Determines the number of channels
+        names = [j["name"] for j in input_list]
+        instrument_tensors = torch.FloatTensor([j["instrument"] for j in input_list])
+        input_list = [j["spec"] for j in input_list]
+        stacked_batch = torch.vstack([torch.tensor(spectra) for spectra in input_list])
+        return_dict = {
+            "spectra": stacked_batch,
+            "names": names,
+            "instruments": instrument_tensors,
+        }
+        return return_dict
+
+    def convert_spectra_to_ar(self, spec, **kwargs) -> np.ndarray:
+        """Converts the spectra to a normalized ar
+
+        Args:
+            spec
+
+        Returns:
+            np.ndarray of shape where each channel has
+        """
+        spectra_ar = spec.get_spec()
+
+        binned_spec = utils.bin_spectra(
+            spectra_ar, num_bins=self.num_bins, upper_limit=self.upper_limit
+        )
+        normed_spec = utils.norm_spectrum(binned_spec)
+
+        # Mean over 0 channel
+        normed_spec = normed_spec.mean(0)
+        return normed_spec
+
+    def _featurize(self, spec: data.Spectra, **kwargs) -> Dict:
+        """featurize.
+
+        Args:
+            spec (Spectra)
+
+        """
+        # return binned spectra
+        instrument = utils.get_instr_idx(spec.get_instrument())
+        normed_spec = self.convert_spectra_to_ar(spec, **kwargs)
+        return {
+            "spec": normed_spec,
+            "instrument": instrument,
+            "name": spec.get_spec_name(),
+        }
+
+
+class MZFeaturizer(SpecFeaturizer):
+    """MZFeaturizer"""
+
+    def __init__(
+        self,
+        upper_limit: int = 1500,
+        max_peaks: int = 50,
+        base_folder: str = "data/paired_spectra",
+        **kwargs,
+    ):
+        """__init__"""
+        raise NotImplementedError()
+        super().__init__(**kwargs)
+
+        self.max_peaks = max_peaks
+        self.upper_limit = upper_limit
+
+    @staticmethod
+    def collate_fn(input_list: List[dict]) -> Dict:
+        raise NotImplementedError()
+        """collate_fn.
+
+        Input list of dataset outputs
+
+        Args:
+            input_list (List[Spectra]): Input list containing spectra to be
+                collated
+        Return:
+            Dictionary containing batched results and list of how many channels are
+            in each tensor
+        """
+        # Determines the number of channels
+        names = [j["name"] for j in input_list]
+        instrument_tensors = torch.FloatTensor([j["instrument"] for j in input_list])
+        input_list = [torch.from_numpy(j["spec"]).float() for j in input_list]
+
+        # Define tensor of input lens
+        input_lens = torch.tensor([len(spectra) for spectra in input_list])
+
+        # Pad the input list using torch function
+        input_list_padded = torch.nn.utils.rnn.pad_sequence(
+            input_list, batch_first=True, padding_value=0
+        )
+
+        return_dict = {
+            "spectra": input_list_padded,
+            "input_lens": input_lens,
+            "names": names,
+            "instruments": instrument_tensors,
+        }
+        return return_dict
+
+    def convert_spectra_to_mz(self, spec, **kwargs) -> np.ndarray:
+        """Converts the spectra to a normalized ar
+
+        Args:
+            spec
+
+        Returns:
+            np.ndarray of shape where each channel has
+        """
+        spectra_ar = spec.get_spec()
+        merged = utils.merge_norm_spectra(spectra_ar)
+
+        # Sort the merged peaks by intensity ([:, 1]) and limit to self.maxpeaks
+        merged = merged[merged[:, 1].argsort()[::-1][: self.max_peaks]]
+
+        parentmass = spec.parentmass
+        # Make sure MS1 is on top with intensity 2
+        merged = np.vstack([[parentmass, 2], merged])
+        return merged
+
+    def _featurize(self, spec: data.Spectra, **kwargs) -> Dict:
+        """featurize.
+
+        Args:
+            spec (Spectra)
+
+        """
+        # return binned spectra
+        normed_spec = self.convert_spectra_to_mz(spec, **kwargs)
+        instrument = utils.get_instr_idx(spec.get_instrument())
+        return {
+            "spec": normed_spec,
+            "name": spec.get_spec_name(),
+            "instrument": instrument,
+        }
 
 
 class PeakFormula(SpecFeaturizer):
-    """Featurizer for peak formula annotations.
-
-    Extracts formula assignments for MS/MS peaks from JSON annotation files.
-
-    Args:
-        subform_folder: Path to folder with subformula JSON files
-        augment_data: Whether to apply data augmentation
-        remove_prob: Probability of removing peaks during augmentation
-        inten_prob: Probability of rescaling intensities
-        cls_type: Type of CLS token ("ms1" or "zeros")
-        inten_transform: Intensity transformation ("float", "log", etc.)
-        magma_modulo: Dimension for fragment fingerprints (2048 for MSG version)
-        max_peaks: Maximum number of peaks to featurize (None for no limit)
-    """
+    """PeakFormula."""
 
     cat_types = {"frags": 0, "loss": 1, "ab_loss": 2, "cls": 3}
     num_inten_bins = 10
     num_types = len(cat_types)
-    cls_type_idx = cat_types.get("cls")
+    cls_type = cat_types.get("cls")
 
     num_adducts = len(utils.ION_LST)
 
     def __init__(
         self,
         subform_folder: str,
+        forward_labels: str = None,
         augment_data: bool = False,
         augment_prob: float = 1,
         remove_prob: float = 0.1,
         remove_weights: float = "uniform",
         inten_prob: float = 0.1,
         cls_type: str = "ms1",
-        inten_transform: str = "float",
-        magma_modulo: int = 2048,
+        forward_aug_folder: str = None,
         max_peaks: int = None,
+        inten_transform: str = "float",
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.cls_type = cls_type
+        self.forward_labels = forward_labels
         self.augment_data = augment_data
         self.remove_prob = remove_prob
         self.augment_prob = augment_prob
         self.remove_weights = remove_weights
         self.inten_prob = inten_prob
-        self.inten_transform = inten_transform
-        self.aug_nbits = magma_modulo
+        self.forward_aug_folder = forward_aug_folder
         self.max_peaks = max_peaks
+        self.inten_transform = inten_transform
 
-        subform_files = list(Path(subform_folder).glob("*.json"))
-        self.spec_name_to_subform_file = {i.stem: i for i in subform_files}
+        if subform_folder is not None:
+            subform_files = list(Path(subform_folder).glob("*.json"))
+            self.spec_name_to_subform_file = {i.stem: i for i in tqdm(subform_files, desc="Adding subform files...", leave=False)}
+        else:
+            self.spec_name_to_subform_file = {}
+
+        if self.forward_labels is not None and self.forward_aug_folder is not None:
+            forward_names = set(pd.read_csv(forward_labels, sep="\t")["spec"].values)
+            forward_subform_files = list(Path(self.forward_aug_folder).rglob("*.json"))
+            self.spec_name_to_subform_file.update({i.stem: i for i in tqdm(forward_subform_files, desc="Adding forward spec...", leave=False) if i.stem in forward_names})
 
     def _get_peak_dict(self, spec: data.Spectra) -> dict:
-        """Load peak annotations from JSON file."""
+        """_get_peak_dict.
+
+        Args:
+            spec (data.Spectra): spec
+
+        Returns:
+            dict:
+        """
         spec_name = spec.get_spec_name()
 
         subform_file = Path(self.spec_name_to_subform_file[spec_name])
@@ -349,13 +636,14 @@ class PeakFormula(SpecFeaturizer):
             "root_ion": root_ion,
         }
 
+        # If we have a max peaks, then we need to filter
         if self.max_peaks is not None:
 
             # Sort by intensity
             inten_list = list(out_dict["intens"])
 
             new_order = np.argsort(inten_list)[::-1]
-            cutoff_ind = min(len(inten_list) - 1, self.max_peaks)
+            cutoff_ind = min(len(inten_list), self.max_peaks)
             new_inds = new_order[:cutoff_ind]
 
             # Get new frags, intens, ions and assign to outdict
@@ -370,22 +658,36 @@ class PeakFormula(SpecFeaturizer):
         return out_dict
 
     def augment_peak_dict(self, peak_dict: dict, **kwargs):
-        """Apply data augmentation to peak dictionary."""
+        """augment_peak_dict.
+
+        Add peaks, remove, peaks, or rescale peaks
+
+        Args:
+            peak_dict (dict): Dictionary containing peak dict info to augment
+
+        Return:
+            peak_dict
+        """
+
+        # Only scale frags
         frags = np.array(peak_dict["frags"])
         intens = np.array(peak_dict["intens"])
         ions = np.array(peak_dict["ions"])
 
         # Compute removal probability
-        num_modify_peaks = len(frags)
+        num_modify_peaks = len(frags)  # - 1
         keep_prob = 1 - self.remove_prob
-        num_to_keep = np.random.binomial(n=num_modify_peaks, p=keep_prob)
+        num_to_keep = np.random.binomial(
+            n=num_modify_peaks,
+            p=keep_prob,
+        )
 
         if len(frags) == 0:
             return peak_dict
+        # Temp
+        keep_inds = np.arange(0, num_modify_peaks)  # + 1)
 
-        keep_inds = np.arange(0, num_modify_peaks)
-
-        # Probability weighting
+        # Quadratic probability weighting
         if self.remove_weights == "quadratic":
             keep_probs = intens[0:].reshape(-1) ** 2 + 1e-9
             keep_probs = keep_probs / keep_probs.sum()
@@ -393,15 +695,19 @@ class PeakFormula(SpecFeaturizer):
             keep_probs = intens[0:] + 1e-9
             keep_probs = np.ones(len(keep_probs)) / len(keep_probs)
         elif self.remove_weights == "exp":
+            # Temp
+            # keep_probs = start_intens[1:] + 1e-9
             keep_probs = np.exp(intens[0:].reshape(-1) + 1e-5)
             keep_probs = keep_probs / keep_probs.sum()
         else:
             raise NotImplementedError()
 
         # Keep indices
+        # Add root
         ind_samples = np.random.choice(
             keep_inds, size=num_to_keep, replace=False, p=keep_probs
         )
+        # Re-index frags, intens, and ions
         frags, intens, ions = frags[ind_samples], intens[ind_samples], ions[ind_samples]
 
         rescale_prob = np.random.random(len(intens))
@@ -415,7 +721,6 @@ class PeakFormula(SpecFeaturizer):
         intens = intens * inten_scalar_factor
         new_max = intens.max() + 1e-12 if len(intens) > 0 else 1
         intens /= new_max
-
         # Replace peak dict with new values
         peak_dict["intens"] = intens
         peak_dict["frags"] = frags
@@ -423,10 +728,98 @@ class PeakFormula(SpecFeaturizer):
 
         return peak_dict
 
+    def augment_featurized_output(self, feature_dict: dict) -> dict:
+        """Augment the already featurized output (numpy arrays)"""
+        if not self.augment_data:
+            return feature_dict
+            
+        # Check augment prob
+        if np.random.random() >= self.augment_prob:
+            return feature_dict
+
+        # Extract arrays
+        peak_type = feature_dict["peak_type"]
+        form_vec = feature_dict["form_vec"]
+        ion_vec = np.array(feature_dict["ion_vec"])
+        frag_intens = feature_dict["frag_intens"]
+        
+        # Identify fragment indices (type 0)
+        frag_mask = (peak_type == 0)
+        frag_indices = np.where(frag_mask)[0]
+        
+        if len(frag_indices) == 0:
+            return feature_dict
+
+        # 1. Peak Removal
+        intens = frag_intens[frag_indices]
+        
+        # Compute removal probability
+        num_modify_peaks = len(frag_indices)
+        keep_prob = 1 - self.remove_prob
+        num_to_keep = np.random.binomial(n=num_modify_peaks, p=keep_prob)
+        
+        # Calculate keep probabilities based on weights
+        if self.remove_weights == "quadratic":
+            keep_probs = intens.reshape(-1) ** 2 + 1e-9
+        elif self.remove_weights == "uniform":
+            keep_probs = np.ones(len(intens))
+        elif self.remove_weights == "exp":
+            keep_probs = np.exp(intens.reshape(-1) + 1e-5)
+        else:
+            keep_probs = np.ones(len(intens))
+            
+        keep_probs = keep_probs / keep_probs.sum()
+        
+        # Select indices to keep from the fragment indices
+        kept_frag_indices = np.random.choice(
+            frag_indices, size=num_to_keep, replace=False, p=keep_probs
+        )
+        
+        non_frag_indices = np.where(~frag_mask)[0]
+        all_indices_to_keep = np.concatenate([kept_frag_indices, non_frag_indices])
+        all_indices_to_keep.sort()
+        
+        # 2. Intensity Rescaling
+        new_peak_type = peak_type[all_indices_to_keep]
+        new_form_vec = form_vec[all_indices_to_keep]
+        new_ion_vec = ion_vec[all_indices_to_keep]
+        new_frag_intens = frag_intens[all_indices_to_keep]
+        
+        new_frag_mask = (new_peak_type == 0)
+        num_new_frags = np.sum(new_frag_mask)
+        
+        if num_new_frags > 0:
+            rescale_prob = np.random.random(num_new_frags)
+            inten_scalar_factor = np.random.normal(loc=1, size=num_new_frags)
+            inten_scalar_factor[inten_scalar_factor <= 0] = 0
+            inten_scalar_factor[rescale_prob >= self.inten_prob] = 1
+            
+            new_frag_intens[new_frag_mask] *= inten_scalar_factor
+            
+            # Renormalize max intensity to 1
+            current_frags_intens = new_frag_intens[new_frag_mask]
+            if len(current_frags_intens) > 0:
+                max_val = current_frags_intens.max() + 1e-12
+                new_frag_intens[new_frag_mask] /= max_val
+
+        # Construct new dict
+        new_dict = feature_dict.copy()
+        new_dict["peak_type"] = new_peak_type
+        new_dict["form_vec"] = new_form_vec
+        new_dict["ion_vec"] = new_ion_vec
+        new_dict["frag_intens"] = new_frag_intens
+        
+        return new_dict
+
     def _featurize(
         self, spec: data.Spectra, train_mode: bool = False, **kwargs
     ) -> Dict:
-        """Featurize spectrum with formula annotations."""
+        """featurize.
+
+        Args:
+            spec (Spectra)
+
+        """
         spec_name = spec.get_spec_name()
 
         # Return get_peak_formulas output
@@ -434,11 +827,12 @@ class PeakFormula(SpecFeaturizer):
 
         # Augment peak dict with chem formulae
         if train_mode and self.augment_data:
+            # Only augment certain select peaks
             augment_peak = np.random.random() < self.augment_prob
             if augment_peak:
                 peak_dict = self.augment_peak_dict(peak_dict)
 
-        # Add in chemical formulae
+        # Add in chemical formuale
         root = peak_dict["root_form"]
 
         forms_vec = [utils.formula_to_dense(i) for i in peak_dict["frags"]]
@@ -473,6 +867,7 @@ class PeakFormula(SpecFeaturizer):
             raise NotImplementedError()
 
         # Featurize all formulae
+        mz_dict = dict(zip(mz_vec, forms_vec))
         inten_vec = np.array(inten_vec)
         if self.inten_transform == "float":
             self.inten_feats = 1
@@ -485,25 +880,57 @@ class PeakFormula(SpecFeaturizer):
         elif self.inten_transform == "cat":
             self.inten_feats = self.num_inten_bins
             bins = np.linspace(0, 1, self.num_inten_bins)
+            # Digitize inten vec
             inten_vec = np.digitize(inten_vec, bins)
         else:
             raise NotImplementedError()
 
-        forms_vec = np.array(forms_vec)
+        forms_vec = np.array(forms_vec)  # / utils.NORM_VEC[None, :]
 
-        # Build output dict
+        # Use int featurizer and norm later
         out_dict = {
             "peak_type": np.array(type_vec),
             "form_vec": forms_vec,
-            "ion_vec": ion_vec,
+            "ion_vec": np.array(ion_vec),
             "frag_intens": inten_vec,
             "name": spec_name,
             "instrument": instrument,
         }
         return out_dict
 
+    @classmethod
+    def get_num_inten_feats(self, inten_transform):
+        """_summary_
+
+        Args:
+            inten_transform (_type_): _description_
+
+        Raises:
+            NotImplementedError: _description_
+
+        Returns:
+            _type_: _description_
+        """
+        if inten_transform == "float":
+            inten_feats = 1
+        elif inten_transform == "zero":
+            inten_feats = 1
+        elif inten_transform == "log":
+            inten_feats = 1
+        elif inten_transform == "cat":
+            inten_feats = PeakFormula.num_inten_bins
+        else:
+            raise NotImplementedError()
+        return inten_feats
+
+    def _extract_fingerprint(self, smiles):
+        """extract_fingerprints."""
+        index = self.fp_index_obj.get(smiles)
+        return self.fp_dataset[index]
+
     def featurize(self, spec: data.Spectra, train_mode=False, **kwargs) -> Dict:
-        """Featurize a single spectrum."""
+        """Featurizer a single object"""
+
         encoded_obj = self._encode(spec)
         if train_mode:
             featurized = self._featurize(spec, train_mode=train_mode)
@@ -521,7 +948,15 @@ class PeakFormula(SpecFeaturizer):
 
     @staticmethod
     def collate_fn(input_list: List[dict]) -> Dict:
-        """Collate peak formula features into batch."""
+        """_summary_
+
+        Args:
+            input_list (List[dict]): _description_
+
+        Returns:
+            Dict: _description_
+        """
+        # Determines the number of channels
         names = [j["name"] for j in input_list]
         peak_form_tensors = [torch.from_numpy(j["form_vec"]) for j in input_list]
         inten_tensors = [torch.from_numpy(j["frag_intens"]) for j in input_list]
@@ -550,7 +985,7 @@ class PeakFormula(SpecFeaturizer):
             for i, pad_len in zip(peak_form_tensors, padding_amts)
         ]
 
-        # Stack everything
+        # Stack everything (bxd for root, bxp for others)
         type_tensors = torch.stack(type_tensors, dim=0).long()
         peak_form_tensors = torch.stack(peak_form_tensors, dim=0).float()
         ion_tensors = torch.stack(ion_tensors, dim=0).float()

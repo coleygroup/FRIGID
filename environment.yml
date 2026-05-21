@@ -1,0 +1,14 @@
+name: mist
+channels:
+- pytorch
+- conda-forge
+dependencies:
+- python=3.9.*
+- matplotlib
+- rdkit
+- pytorch-lightning
+- einops
+- ipykernel
+- mkl
+- seaborn
+- h5py

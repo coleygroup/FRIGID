@@ -1,0 +1,13 @@
+scikit-learn
+pathos
+setuptools
+CairoSVG
+einops
+matplotlib
+rdkit
+pytorch-lightning
+einops
+mkl
+seaborn
+h5py
+wandb

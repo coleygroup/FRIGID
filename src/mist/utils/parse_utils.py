@@ -1,20 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Parsing utilities for mass spectrometry file formats."""
-
+""" parse_utils.py """
 from pathlib import Path
 from typing import Tuple, List, Optional
 from itertools import groupby
@@ -24,13 +8,15 @@ import numpy as np
 
 
 def parse_spectra(spectra_file: str) -> Tuple[dict, List[Tuple[str, np.ndarray]]]:
-    """Parse spectra in the SIRIUS format.
+    """parse_spectra.
+
+    Parses spectra in the SIRIUS format and returns
 
     Args:
-        spectra_file: Name of spectra file to parse
-
-    Returns:
-        Tuple of (metadata dict, list of (name, spectrum array) tuples)
+        spectra_file (str): Name of spectra file to parse
+    Return:
+        Tuple[dict, List[Tuple[str, np.ndarray]]]: metadata and list of spectra
+            tuples containing name and array
     """
     lines = [i.strip() for i in open(spectra_file, "r").readlines()]
 
@@ -85,16 +71,20 @@ def parse_spectra(spectra_file: str) -> Tuple[dict, List[Tuple[str, np.ndarray]]
 def spec_to_ms_str(
     spec: List[Tuple[str, np.ndarray]], essential_keys: dict, comments: dict = {}
 ) -> str:
-    """Convert spectrum arrays and info dicts to string for output file.
+    """spec_to_ms_str.
+
+    Turn spec ars and info dicts into str for output file
+
 
     Args:
-        spec: List of (name, spectrum array) tuples
-        essential_keys: Required metadata keys
-        comments: Optional comment keys
+        spec (List[Tuple[str, np.ndarray]]): spec
+        essential_keys (dict): essential_keys
+        comments (dict): comments
 
     Returns:
-        Formatted string for output file
+        str:
     """
+
     def pair_rows(rows):
         return "\n".join([f"{i} {j}" for i, j in rows])
 
@@ -111,21 +101,19 @@ def build_mgf_str(
     merge_charges=True,
     parent_mass_keys=["PEPMASS", "parentmass", "PRECURSOR_MZ"],
 ) -> str:
-    """Build MGF format string from metadata and spectra list.
+    """build_mgf_str.
 
     Args:
-        meta_spec_list: List of (metadata, spectra) tuples
-        merge_charges: Whether to merge charge states
-        parent_mass_keys: Keys to check for parent mass
+        meta_spec_list (List[Tuple[dict, List[Tuple[str, np.ndarray]]]]): meta_spec_list
 
     Returns:
-        MGF formatted string
+        str:
     """
     entries = []
     for meta, spec in tqdm(meta_spec_list):
         str_rows = ["BEGIN IONS"]
 
-        # Try to add precursor mass
+        # Try to add precusor mass
         for i in parent_mass_keys:
             if i in meta:
                 pep_mass = float(meta.get(i, -100))
@@ -153,15 +141,18 @@ def build_mgf_str(
 def parse_spectra_msp(
     mgf_file: str, max_num: Optional[int] = None
 ) -> List[Tuple[dict, List[Tuple[str, np.ndarray]]]]:
-    """Parse spectra in MSP file format.
+    """parse_spectr_msp.
+
+    Parses spectra in the MSP file format
 
     Args:
-        mgf_file: Path to MSP file
-        max_num: Maximum number of spectra to parse
-
-    Returns:
-        List of (metadata, spectra) tuples
+        mgf_file (str) : str
+        max_num (Optional[int]): If set, only parse this many
+    Return:
+        List[Tuple[dict, List[Tuple[str, np.ndarray]]]]: metadata and list of spectra
+            tuples containing name and array
     """
+
     key = lambda x: x.strip().startswith("PEPMASS")
     parsed_spectra = []
     with open(mgf_file, "r", encoding="utf-8") as fp:
@@ -191,8 +182,12 @@ def parse_spectra_msp(
                 cur_spectra = np.vstack(cur_spectra)
                 spectra.append((cur_spectra_name, cur_spectra))
                 parsed_spectra.append((meta, spectra))
+            else:
+                pass
+                # print("no spectra found for group: ", "".join(group))
 
             if max_num is not None and len(parsed_spectra) > max_num:
+                # print("Breaking")
                 break
         return parsed_spectra
 
@@ -200,15 +195,18 @@ def parse_spectra_msp(
 def parse_spectra_mgf(
     mgf_file: str, max_num: Optional[int] = None
 ) -> List[Tuple[dict, List[Tuple[str, np.ndarray]]]]:
-    """Parse spectra in MGF file format.
+    """parse_spectr_mgf.
+
+    Parses spectra in the MGF file formate, with
 
     Args:
-        mgf_file: Path to MGF file
-        max_num: Maximum number of spectra to parse
-
-    Returns:
-        List of (metadata, spectra) tuples
+        mgf_file (str) : str
+        max_num (Optional[int]): If set, only parse this many
+    Return:
+        List[Tuple[dict, List[Tuple[str, np.ndarray]]]]: metadata and list of spectra
+            tuples containing name and array
     """
+
     key = lambda x: x.strip() == "BEGIN IONS"
     parsed_spectra = []
     with open(mgf_file, "r") as fp:
@@ -242,20 +240,27 @@ def parse_spectra_mgf(
                 cur_spectra = np.vstack(cur_spectra)
                 spectra.append((cur_spectra_name, cur_spectra))
                 parsed_spectra.append((meta, spectra))
+            else:
+                pass
+                # print("no spectra found for group: ", "".join(group))
 
             if max_num is not None and len(parsed_spectra) > max_num:
+                # print("Breaking")
                 break
         return parsed_spectra
 
 
 def parse_tsv_spectra(spectra_file: str) -> List[Tuple[str, np.ndarray]]:
-    """Parse spectra from SIRIUS fragmentation tree TSV.
+    """parse_tsv_spectra.
+
+    Parses spectra returned from sirius fragmentation tree
 
     Args:
-        spectra_file: Name of spectra TSV file to parse
-
-    Returns:
-        List of (name, spectrum array) tuples
+        spectra_file (str): Name of spectra tsv file to parse
+    Return:
+        List[Tuple[str, np.ndarray]]]: list of spectra
+            tuples containing name and array. This is used to maintain
+            consistency with the parse_spectra output
     """
     output_spec = []
     with open(spectra_file, "r") as fp:

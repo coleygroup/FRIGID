@@ -1,25 +1,13 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Chemistry utility functions for MIST encoder."""
+"""chem_utils.py"""
 
 import re
+import hashlib
 import numpy as np
 import pandas as pd
+import json
 from functools import reduce
 from collections import defaultdict
+from typing import Tuple
 
 import torch
 from rdkit import Chem
@@ -57,6 +45,7 @@ VALID_ELEMENTS = [
 ]
 VALID_ATOM_NUM = [Atom(i).GetAtomicNum() for i in VALID_ELEMENTS]
 
+
 CHEM_ELEMENT_NUM = len(VALID_ELEMENTS)
 
 ATOM_NUM_TO_ONEHOT = torch.zeros((max(VALID_ATOM_NUM) + 1, CHEM_ELEMENT_NUM))
@@ -72,6 +61,15 @@ CHEM_MASSES = VALID_MONO_MASSES[:, None]
 ELEMENT_VECTORS = np.eye(len(VALID_ELEMENTS))
 ELEMENT_VECTORS_MASS = np.hstack([ELEMENT_VECTORS, CHEM_MASSES])
 ELEMENT_TO_MASS = dict(zip(VALID_ELEMENTS, CHEM_MASSES.squeeze()))
+
+def get_subdir(name: str) -> str:
+    """Get subdirectory name for a file based on hash of its name.
+
+    Distributes files across 256 subdirectories (000-255) using MD5 hash.
+    Deterministic: the same name always maps to the same subdirectory.
+    """
+    bucket = int(hashlib.md5(name.encode()).hexdigest()[:2], 16)
+    return f"{bucket:03d}"
 
 ELEMENT_DIM_MASS = len(ELEMENT_VECTORS_MASS[0])
 ELEMENT_DIM = len(ELEMENT_VECTORS[0])
@@ -135,7 +133,7 @@ ion_to_add_vec = {
     "[M-H4O2+H]+": -element_to_position["O"] * 2 - element_to_position["H"] * 3,
 }
 
-instrument_to_type = defaultdict(lambda: "unknown")
+instrument_to_type = defaultdict(lambda : "unknown")
 instrument_to_type.update({
     "Thermo Finnigan Velos Orbitrap": "orbitrap",
     "Thermo Finnigan Elite Orbitrap": "orbitrap",
@@ -162,18 +160,18 @@ for k, v in zip(els, weights):
 
 
 def get_ion_idx(ionization: str) -> int:
-    """Map ionization to its index in one hot encoding."""
+    """map ionization to its index in one hot encoding"""
     return ion_to_idx[ionization]
 
 
 def get_instr_idx(instrument: str) -> int:
-    """Map instrument to its index in one hot encoding."""
+    """map instrument to its index in one hot encoding"""
     inst = instrument_to_type.get(instrument, "unknown")
     return instrument_to_idx[inst]
 
 
 def has_valid_els(chem_formula: str) -> bool:
-    """Check if chemical formula contains only valid elements."""
+    """has_valid_els"""
     for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
         if chem_symbol not in VALID_ELEMENTS:
             return False
@@ -181,13 +179,13 @@ def has_valid_els(chem_formula: str) -> bool:
 
 
 def formula_to_dense(chem_formula: str) -> np.ndarray:
-    """Convert chemical formula to dense vector representation.
+    """formula_to_dense.
 
     Args:
-        chem_formula: Input chemical formula string
+        chem_formula (str): Input chemical formal
+    Return:
+        np.ndarray of vector
 
-    Returns:
-        np.ndarray of element counts
     """
     total_onehot = []
     for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
@@ -202,27 +200,27 @@ def formula_to_dense(chem_formula: str) -> np.ndarray:
         dense_vec = np.zeros(len(element_to_position))
     else:
         dense_vec = np.vstack(total_onehot).sum(0)
-
     return dense_vec
 
 
 def cross_sum(x, y):
-    """Compute cross sum of two arrays."""
+    """cross_sum."""
     return (np.expand_dims(x, 0) + np.expand_dims(y, 1)).reshape(-1, y.shape[-1])
 
 
 def get_all_subsets_dense(
     dense_formula: str, element_vectors
-) -> tuple:
-    """Get all subsets of a dense formula vector.
+) -> Tuple[np.ndarray, np.ndarray]:
+    """_summary_
 
     Args:
-        dense_formula: Dense formula vector
-        element_vectors: Element basis vectors
+        dense_formula (str, element_vectors): _description_
+        np (_type_): _description_
 
     Returns:
-        Tuple of (cross_prod, all_masses)
+        _type_: _description_
     """
+
     non_zero = np.argwhere(dense_formula > 0).flatten()
 
     vectorized_formula = []
@@ -242,33 +240,56 @@ def get_all_subsets_dense(
 
 
 def get_all_subsets(chem_formula: str):
-    """Get all valid subsets of a chemical formula."""
     dense_formula = formula_to_dense(chem_formula)
     return get_all_subsets_dense(dense_formula, element_vectors=ELEMENT_VECTORS)
 
 
 def rdbe_filter(cross_prod):
-    """Filter by ring and double bond equivalent.
-
+    """rdbe_filter.
     Args:
-        cross_prod: Cross product array to filter
-
-    Returns:
-        Indices of valid entries
+        cross_prod:
     """
     rdbe_total = 1 + 0.5 * cross_prod.dot(rdbe_mult)
     filter_inds = np.argwhere(rdbe_total >= 0).flatten()
     return filter_inds
 
 
-def formula_to_dense_mass(chem_formula: str) -> np.ndarray:
-    """Convert formula to dense representation including mass.
+def formula_to_dense(chem_formula: str) -> np.ndarray:
+    """formula_to_dense.
 
     Args:
-        chem_formula: Input chemical formula
+        chem_formula (str): Input chemical formal
+    Return:
+        np.ndarray of vector
 
-    Returns:
-        np.ndarray vector including mass dimension
+    """
+    total_onehot = []
+    for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
+        # Convert num to int
+        num = 1 if num == "" else int(num)
+        one_hot = element_to_position[chem_symbol].reshape(1, -1)
+        one_hot_repeats = np.repeat(one_hot, repeats=num, axis=0)
+        total_onehot.append(one_hot_repeats)
+
+    # Check if null
+    if len(total_onehot) == 0:
+        dense_vec = np.zeros(len(element_to_position))
+    else:
+        dense_vec = np.vstack(total_onehot).sum(0)
+
+    return dense_vec
+
+
+def formula_to_dense_mass(chem_formula: str) -> np.ndarray:
+    """formula_to_dense_mass.
+
+    Return formula including full compound mass
+
+    Args:
+        chem_formula (str): Input chemical formal
+    Return:
+        np.ndarray of vector
+
     """
     total_onehot = []
     for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
@@ -288,21 +309,24 @@ def formula_to_dense_mass(chem_formula: str) -> np.ndarray:
 
 
 def formula_to_dense_mass_norm(chem_formula: str) -> np.ndarray:
-    """Convert formula to normalized dense representation with mass.
+    """formula_to_dense_mass_norm.
+
+    Return formula including full compound mass and normalized
 
     Args:
-        chem_formula: Input chemical formula
+        chem_formula (str): Input chemical formal
+    Return:
+        np.ndarray of vector
 
-    Returns:
-        Normalized np.ndarray vector
     """
     dense_vec = formula_to_dense_mass(chem_formula)
     dense_vec = dense_vec / NORM_VEC_MASS
+
     return dense_vec
 
 
 def formula_mass(chem_formula: str) -> float:
-    """Calculate mass from chemical formula."""
+    """get formula mass"""
     mass = 0
     for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
         # Convert num to int
@@ -312,12 +336,12 @@ def formula_mass(chem_formula: str) -> float:
 
 
 def electron_correct(mass: float) -> float:
-    """Subtract the rest mass of an electron."""
+    """subtract the rest mass of an electron"""
     return mass - ELECTRON_MASS
 
 
 def formula_difference(formula_1, formula_2):
-    """Compute formula_1 - formula_2."""
+    """formula_1 - formula_2"""
     form_1 = {
         chem_symbol: (int(num) if num != "" else 1)
         for chem_symbol, num in re.findall(CHEM_FORMULA_SIZE, formula_1)
@@ -334,7 +358,6 @@ def formula_difference(formula_1, formula_2):
 
 
 def get_mol_from_structure_string(structure_string, structure_type):
-    """Get RDKit mol from structure string."""
     if structure_type == "InChI":
         mol = Chem.MolFromInchi(structure_string)
     else:
@@ -343,7 +366,7 @@ def get_mol_from_structure_string(structure_string, structure_type):
 
 
 def vec_to_formula(form_vec):
-    """Convert dense vector back to formula string."""
+    """vec_to_formula."""
     build_str = ""
     for i in np.argwhere(form_vec > 0).flatten():
         el = VALID_ELEMENTS[i]
@@ -354,12 +377,12 @@ def vec_to_formula(form_vec):
 
 
 def standardize_form(i):
-    """Standardize chemical formula."""
+    """standardize_form."""
     return vec_to_formula(formula_to_dense(i))
 
 
 def standardize_adduct(adduct):
-    """Standardize adduct notation."""
+    """standardize_adduct."""
     adduct = adduct.replace(" ", "")
     adduct = ion_remap.get(adduct, adduct)
     if adduct not in ION_LST:
@@ -368,7 +391,11 @@ def standardize_adduct(adduct):
 
 
 def calc_structure_string_type(structure_string):
-    """Determine the type of structure string (InChI or SMILES)."""
+    """calc_structure_string_type.
+
+    Args:
+        structure_string:
+    """
     structure_type = None
     if pd.isna(structure_string):
         structure_type = "empty"
@@ -380,7 +407,7 @@ def calc_structure_string_type(structure_string):
 
 
 def uncharged_formula(mol, mol_type="mol") -> str:
-    """Compute uncharged formula from molecule."""
+    """Compute uncharged formula"""
     if mol_type == "mol":
         chem_formula = CalcMolFormula(mol)
     elif mol_type == "smiles":
@@ -395,7 +422,14 @@ def uncharged_formula(mol, mol_type="mol") -> str:
 
 
 def form_from_smi(smi: str) -> str:
-    """Get formula from SMILES string."""
+    """form_from_smi.
+
+    Args:
+        smi (str): smi
+
+    Return:
+        str
+    """
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return ""
@@ -404,7 +438,14 @@ def form_from_smi(smi: str) -> str:
 
 
 def inchikey_from_smiles(smi: str) -> str:
-    """Get InChIKey from SMILES string."""
+    """inchikey_from_smiles.
+
+    Args:
+        smi (str): smi
+
+    Returns:
+        str:
+    """
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return ""
@@ -413,26 +454,26 @@ def inchikey_from_smiles(smi: str) -> str:
 
 
 def contains_metals(formula: str) -> bool:
-    """Check if formula contains metals."""
+    """returns true if formula contains metals"""
     METAL_RE = "(Fe|Co|Zn|Rh|Pt|Li)"
     return len(re.findall(METAL_RE, formula)) > 0
 
 
 class SmilesStandardizer(object):
-    """Standardize SMILES strings."""
+    """Standardize smiles"""
 
     def __init__(self, *args, **kwargs):
         self.fragment_standardizer = rdMolStandardize.LargestFragmentChooser()
         self.charge_standardizer = rdMolStandardize.Uncharger()
 
     def standardize_smiles(self, smi):
-        """Standardize SMILES string."""
+        """Standardize smiles string"""
         mol = Chem.MolFromSmiles(smi)
         out_smi = self.standardize_mol(mol)
         return out_smi
 
     def standardize_mol(self, mol) -> str:
-        """Standardize molecule."""
+        """Standardize smiles string"""
         mol = self.fragment_standardizer.choose(mol)
         mol = self.charge_standardizer.uncharge(mol)
 
@@ -443,7 +484,14 @@ class SmilesStandardizer(object):
 
 
 def mass_from_smi(smi: str) -> float:
-    """Get exact mass from SMILES."""
+    """mass_from_smi.
+
+    Args:
+        smi (str): smi
+
+    Return:
+        str
+    """
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return 0
@@ -452,7 +500,6 @@ def mass_from_smi(smi: str) -> float:
 
 
 def min_formal_from_smi(smi: str):
-    """Get minimum formal charge from SMILES."""
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return 0
@@ -462,7 +509,6 @@ def min_formal_from_smi(smi: str):
 
 
 def max_formal_from_smi(smi: str):
-    """Get maximum formal charge from SMILES."""
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return 0
@@ -472,7 +518,14 @@ def max_formal_from_smi(smi: str):
 
 
 def atoms_from_smi(smi: str) -> int:
-    """Get number of atoms from SMILES."""
+    """atoms_from_smi.
+
+    Args:
+        smi (str): smi
+
+    Return:
+        int
+    """
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return 0
@@ -480,15 +533,32 @@ def atoms_from_smi(smi: str) -> int:
         return mol.GetNumAtoms()
 
 
+def has_valid_els(chem_formula: str) -> bool:
+    """has_valid_els"""
+    for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
+        if chem_symbol not in VALID_ELEMENTS:
+            return False
+    return True
+
+
 def add_ion(form: str, ion: str):
-    """Add ion to formula."""
+    """add_ion.
+    Args:
+        form (str): form
+        ion (str): ion
+    """
     ion_vec = ion_to_add_vec[ion]
     form_vec = formula_to_dense(form)
     return vec_to_formula(form_vec + ion_vec)
 
 
 def achiral_smi(smi: str) -> str:
-    """Convert to achiral SMILES (remove stereochemistry)."""
+    """achiral_smi.
+
+    Return:
+        isomeric smiles
+
+    """
     try:
         mol = Chem.MolFromSmiles(smi)
         if mol is not None:
@@ -496,19 +566,38 @@ def achiral_smi(smi: str) -> str:
             return smi
         else:
             return ""
-    except Exception:
+    except:
         return ""
 
 
-def clipped_ppm(mass_diff: np.ndarray, parentmass: np.ndarray) -> np.ndarray:
-    """Calculate clipped ppm mass difference.
+def npclassifer_query(inputs):
+    """npclassifier_query.
 
     Args:
-        mass_diff: Mass difference array
-        parentmass: Parent mass array
+        input: Tuple of name, molecule
+    Return:
+        Dict of name to molecule
+    """
+    import requests
+
+    spec = inputs[0]
+    endpoint = "https://npclassifier.ucsd.edu/classify"
+    req_data = {"smiles": inputs[1]}
+    out = requests.get(f"{endpoint}", data=req_data)
+    out.raise_for_status()
+    out_json = out.json()
+    return {spec: out_json}
+
+
+def clipped_ppm(mass_diff: np.ndarray, parentmass: np.ndarray) -> np.ndarray:
+    """clipped_ppm.
+
+    Args:
+        mass_diff (np.ndarray): mass_diff
+        parentmass (np.ndarray): parentmass
 
     Returns:
-        PPM values clipped to minimum of 200 Da
+        np.ndarray:
     """
     parentmass_copy = parentmass * 1
     parentmass_copy[parentmass < 200] = 200
@@ -516,8 +605,16 @@ def clipped_ppm(mass_diff: np.ndarray, parentmass: np.ndarray) -> np.ndarray:
     return ppm
 
 
-def clipped_ppm_single(cls_mass_diff: float, parentmass: float):
-    """Calculate clipped ppm for single value."""
+def clipped_ppm_single(
+    cls_mass_diff: float,
+    parentmass: float,
+):
+    """clipped_ppm_single.
+
+    Args:
+        cls_mass_diff (float): cls_mass_diff
+        parentmass (float): parentmass
+    """
     div_factor = 200 if parentmass < 200 else parentmass
     cls_ppm = cls_mass_diff / div_factor * 1e6
     return cls_ppm

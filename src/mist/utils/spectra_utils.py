@@ -1,20 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Spectra processing utilities for MIST encoder."""
-
+""" spectra_utils.py"""
 import logging
 import numpy as np
 from typing import List
@@ -32,14 +16,15 @@ from .chem_utils import (
 def bin_spectra(
     spectras: List[np.ndarray], num_bins: int = 2000, upper_limit: int = 1000
 ) -> np.ndarray:
-    """Bin spectra into discrete bins.
+    """bin_spectra.
 
     Args:
-        spectras: Input list of spectra tuples [(header, spec array)]
-        num_bins: Number of discrete bins from [0, upper_limit)
-        upper_limit: Max m/z to consider featurizing
+        spectras (List[np.ndarray]): Input list of spectra tuples
+            [(header, spec array)]
+        num_bins (int): Number of discrete bins from [0, upper_limit)
+        upper_limit (int): Max m/z to consider featurizing
 
-    Returns:
+    Return:
         np.ndarray of shape [channels, num_bins]
     """
     bins = np.linspace(0, upper_limit, num=num_bins)
@@ -63,17 +48,12 @@ def bin_spectra(
 
 
 def merge_norm_spectra(spec_tuples, precision=4) -> np.ndarray:
-    """Merge and normalize spectra by m/z precision.
+    """merge_norm_spectra.
 
-    Take a list of mz, inten tuple arrays and merge them by 4 digit precision.
-    Note this uses max merging.
+    Take a list of mz, inten tuple arrays and merge them by 4 digit precision
 
-    Args:
-        spec_tuples: List of spectrum arrays
-        precision: Decimal precision for merging
+    Note this uses _max_ merging
 
-    Returns:
-        Merged and normalized spectrum array
     """
     mz_to_inten_pair = {}
     for i in spec_tuples:
@@ -94,16 +74,18 @@ def merge_norm_spectra(spec_tuples, precision=4) -> np.ndarray:
 
 
 def norm_spectrum(binned_spec: np.ndarray) -> np.ndarray:
-    """Normalize each spectral channel to have max 1.
+    """norm_spectrum.
 
-    This change is made in place.
+    Normalizes each spectral channel to have norm 1
+    This change is made in place
 
     Args:
-        binned_spec: Vector of spectra
+        binned_spec (np.ndarray) : Vector of spectras
 
-    Returns:
+    Return:
         np.ndarray where each channel has max(1)
     """
+
     spec_maxes = binned_spec.max(1)
 
     non_zero_max = spec_maxes > 0
@@ -115,18 +97,8 @@ def norm_spectrum(binned_spec: np.ndarray) -> np.ndarray:
 
 
 def process_spec_file(meta, tuples, precision=4, max_inten=0.001, max_peaks=60):
-    """Process spectrum file with normalization and filtering.
+    """process_spec_file."""
 
-    Args:
-        meta: Metadata dictionary
-        tuples: List of spectrum tuples
-        precision: Decimal precision for merging
-        max_inten: Minimum intensity threshold
-        max_peaks: Maximum number of peaks to keep
-
-    Returns:
-        Processed spectrum array
-    """
     if "parentmass" in meta:
         parentmass = meta.get("parentmass", None)
     elif "PARENTMASS" in meta:
@@ -134,7 +106,7 @@ def process_spec_file(meta, tuples, precision=4, max_inten=0.001, max_peaks=60):
     elif "PEPMASS" in meta:
         parentmass = meta.get("PEPMASS", None)
     else:
-        logging.debug("missing parentmass for spec")
+        logging.debug(f"missing parentmass for spec")
         parentmass = 1000000
 
     parentmass = float(parentmass)
@@ -174,15 +146,17 @@ def process_spec_file(meta, tuples, precision=4, max_inten=0.001, max_peaks=60):
 
 
 def max_inten_spec(spec, max_num_inten: int = 60, inten_thresh: float = 0):
-    """Filter spectrum by intensity.
+    """max_inten_spec.
 
     Args:
         spec: 2D spectra array
         max_num_inten: Max number of peaks
-        inten_thresh: Min intensity to allow in returned peak
+        inten_thresh: Min intensity to alloow in returned peak
 
-    Returns:
-        Filtered spectrum
+    Return:
+        Spec filtered down
+
+
     """
     spec_masses, spec_intens = spec[:, 0], spec[:, 1]
 
@@ -203,16 +177,14 @@ def max_inten_spec(spec, max_num_inten: int = 60, inten_thresh: float = 0):
 
 
 def max_thresh_spec(spec: np.ndarray, max_peaks=100, inten_thresh=0.003):
-    """Filter spectrum by max peaks and intensity threshold.
+    """max_thresh_spec.
 
     Args:
-        spec: Spectrum array
+        spec (np.ndarray): spec
         max_peaks: Max num peaks to keep
-        inten_thresh: Min intensity to keep
-
-    Returns:
-        Filtered spectrum array
+        inten_thresh: Min inten to keep
     """
+
     spec_masses, spec_intens = spec[:, 0], spec[:, 1]
 
     # Make sure to only take max of each formula
@@ -231,16 +203,16 @@ def max_thresh_spec(spec: np.ndarray, max_peaks=100, inten_thresh=0.003):
 
 
 def assign_subforms(form, spec, ion_type, mass_diff_thresh=15):
-    """Assign subformulas to spectrum peaks.
+    """_summary_
 
     Args:
-        form: Parent formula
-        spec: Spectrum array
-        ion_type: Ionization type
-        mass_diff_thresh: Maximum mass difference in ppm
+        form (_type_): _description_
+        spec (_type_): _description_
+        ion_type (_type_): _description_
+        mass_diff_thresh (int, optional): _description_. Defaults to 15.
 
     Returns:
-        Dictionary with assigned subformulas
+        _type_: _description_
     """
     cross_prod, masses = get_all_subsets(form)
     spec_masses, spec_intens = spec[:, 0], spec[:, 1]
@@ -288,7 +260,8 @@ def assign_subforms(form, spec, ion_type, mass_diff_thresh=15):
     formulas = formulas[uniq_mask]
     ion_types = ion_types[uniq_mask]
 
-    # To calculate explained intensity, preserve the original normalized intensity
+    # To calculate explained intensity, preserve the original normalized
+    # intensity
     if spec_intens.size == 0:
         output_tbl = None
     else:
@@ -317,21 +290,21 @@ def get_output_dict(
     mass_diff_thresh: float,
     ion_type: str,
 ) -> dict:
-    """Get output dictionary with assigned subformulas.
+    """_summary_
 
-    This function attempts to take an array of mass intensity values and assign
-    formula subsets to subpeaks.
+    This function attemps to take an array of mass intensity values and assign
+    formula subsets to subpeaks
 
     Args:
-        spec_name: Spectrum name
-        spec: Spectrum array
-        form: Parent formula
-        mass_diff_type: Type of mass difference ("ppm")
-        mass_diff_thresh: Maximum mass difference threshold
-        ion_type: Ionization type
+        spec_name (str): _description_
+        spec (np.ndarray): _description_
+        form (str): _description_
+        mass_diff_type (str): _description_
+        mass_diff_thresh (float): _description_
+        ion_type (str): _description_
 
     Returns:
-        Dictionary with assigned subformulas
+        dict: _description_
     """
     assert mass_diff_type == "ppm"
     # This is the case for some erroneous MS2 files for which proc_spec_file return None
