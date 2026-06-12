@@ -1,12 +1,9 @@
-# Original data link
-#SVM_URL="https://bio.informatik.uni-jena.de/wp/wp-content/uploads/2020/08/svm_training_data.zip"
-
-export_link="TODO: update with new data link"
+export_link="https://zenodo.org/records/20671842/files/canopus_aug_filt.tar.gz"
 
 mkdir -p data/
 cd data/
 wget $export_link
 
-tar -xvf canopus.tar.gz
-rm -f canopus.tar.gz
+tar -xvf canopus_aug_filt.tar.gz
+rm -f canopus_aug_filt.tar.gz
 cd ../

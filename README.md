@@ -36,7 +36,7 @@ _Note: following prior works, we refer to the NPLIB1 dataset as CANOPUS in our c
 
 While the original MIST paper trained on small amounts of simulated spectra, we use much larger-scale synthetic training datasets consisting of ICEBERG-simulated spectra. We mix in this synthetic data with experimental spectra when training the MIST encoders. In order to have a fair evaluation, the CANOPUS and MassSpecGym synthetic training datasets do not contain any CANOPUS/MassSpecGym test or validation structures, and the spectra are simulated using ICEBERG checkpoints trained _only_ on the CANOPUS/MassSpecGym datasets. This ensures that we never include any additional experimental spectra outside of the CANOPUS/MassSpecGym training datasets.  
 
-To download/process all of the necessary data, run the scripts in the `data/` folder.
+To download/process all of the necessary data, run the scripts in the `data/` folder on the `main` branch first to download the original CANOPUS/MassSpecGym datasets, and then run the scripts in the `data/` folder on this branch (`MIST-FRIGID`) to download the synthetic datasets.
 
 ## Training models <a name="training"></a>
 
