@@ -157,6 +157,9 @@ git submodule update --init --recursive
 conda create -n frigid python=3.10
 conda activate frigid
 
+# Patch ms-pred for MSG/CANOPUS ICEBERG ckpts (pin: e446eeb)
+bash env/patch_ms_pred.sh
+
 # Install dependencies
 pip install -r ms-pred/requirements.txt
 pip install -e ./ms-pred
@@ -165,6 +168,8 @@ pip install -e .
 # (Optional) Install optuna for training NGBoost token models
 pip install optuna
 ```
+
+Local patch: `env/patches/ms-pred-e446eeb-instrument-profile.patch` — set `ICEBERG_INSTRUMENT_PROFILE=msg` or `canopus` to match the ICEBERG checkpoint.
 
 ---
 

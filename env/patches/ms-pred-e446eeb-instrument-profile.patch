@@ -1,0 +1,41 @@
+diff --git a/src/ms_pred/common/chem_utils.py b/src/ms_pred/common/chem_utils.py
+index e06de75..912d401 100644
+--- a/src/ms_pred/common/chem_utils.py
++++ b/src/ms_pred/common/chem_utils.py
+@@ -242,11 +242,31 @@ for ion in _ori_ions:
+             ion2onehot_pos[eq_ion] = ion2onehot_pos[ion]
+             
+ 
+-instrument2onehot_pos = {
+-    "Orbitrap": 0,
+-    "QTOF": 1, 
+-    "Unknown": 2
+-}
++def _build_instrument2onehot_pos():
++    """Instrument vocab depends on ICEBERG checkpoint family.
++
++    Set ICEBERG_INSTRUMENT_PROFILE before importing ms_pred / launching predict_smis:
++      - msg:     2-class (Orbitrap, QTOF)     -> MSG ckpts
++      - canopus: 3-class (+ Unknown)          -> CANOPUS ckpts (e446eeb default)
++    """
++    import os
++
++    profile = os.environ.get("ICEBERG_INSTRUMENT_PROFILE", "canopus").strip().lower()
++    base = {
++        "Orbitrap": 0,
++        "QTOF": 1,
++    }
++    if profile in {"msg", "2"}:
++        return base
++    if profile in {"canopus", "3", ""}:
++        return {**base, "Unknown": 2}
++    raise ValueError(
++        f"Unknown ICEBERG_INSTRUMENT_PROFILE={profile!r}. "
++        "Expected one of: msg, canopus."
++    )
++
++
++instrument2onehot_pos = _build_instrument2onehot_pos()
+ 
+ 
+ @lru_cache(maxsize=1)
