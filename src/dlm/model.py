@@ -254,10 +254,16 @@ class DLM(L.LightningModule):
         # Build token atom counts matrix
         token_atom_counts = torch.zeros(vocab_size, num_atom_types, dtype=torch.float32)
         
+        special_ids = set(self.tokenizer.all_special_ids)
         for token_id in range(vocab_size):
+            if token_id in special_ids:
+                # Special tokens (e.g. [CLS]/[SEP]/[PAD]/[UNK]/[MASK]) are not molecular
+                # fragments; their bracketed strings would otherwise be mis-parsed as
+                # SMILES bracket atoms (e.g. "[SEP]" -> S, P). Leave them as zero rows.
+                continue
             # Decode token to string
             token_str = self.tokenizer.decode([token_id])
-            
+
             # Parse atoms from token string (SMILES/SAFE fragment, not Hill formula)
             try:
                 counts = encoder.parse_atoms_from_smiles(token_str)
@@ -265,12 +271,22 @@ class DLM(L.LightningModule):
                 count_vector = encoder.counts_to_vector(counts, normalize='none')
                 token_atom_counts[token_id] = count_vector
             except Exception:
-                # If parsing fails, leave as zeros (special tokens, etc.)
+                # If parsing fails, leave as zeros
                 pass
-        
+
         # Register as persistent buffer so it moves to correct device automatically
         self.register_buffer('token_atom_counts', token_atom_counts)
-        
+
+        # Per-atom-type weight for the formula loss: heavy atoms only. Implicit
+        # hydrogens depend on bonds spanning token boundaries and cannot be recovered
+        # per-token, so token_atom_counts[:, H] is near-zero everywhere while the
+        # ground-truth formula counts all hydrogens -- including H in the loss would
+        # add an unlearnable constant offset.
+        formula_loss_atom_weights = torch.ones(num_atom_types, dtype=torch.float32)
+        if 'H' in encoder.atom_to_idx:
+            formula_loss_atom_weights[encoder.atom_to_idx['H']] = 0.0
+        self.register_buffer('formula_loss_atom_weights', formula_loss_atom_weights)
+
         # Store num_atom_types for reference
         self._num_atom_types = num_atom_types
 
@@ -283,7 +299,7 @@ class DLM(L.LightningModule):
         initialized in __init__, so missing keys for non-trainable buffers are safe.
         """
         # List of buffers that can be safely missing (they're computed, not learned)
-        safe_missing_buffers = {'token_atom_counts'}
+        safe_missing_buffers = {'token_atom_counts', 'formula_loss_atom_weights'}
         
         # First try strict loading
         if strict:
@@ -632,45 +648,59 @@ class DLM(L.LightningModule):
         flipped = torch.where(flip_mask, 1.0 - fp_tensor, fp_tensor)
         return flipped
 
-    def compute_formula_loss(self, logits, gt_formula_vectors, attention_mask):
+    def compute_formula_loss(self, logits, xt, gt_formula_vectors, attention_mask, sample_weights=None):
         """
         Compute differentiable loss between expected atom counts and ground truth formula.
-        
-        This loss penalizes the model based on the difference between the expected 
-        number of atoms in the generated sequence and the ground truth atom counts.
-        
+
+        For positions still masked in `xt`, the model's expected atom counts are used
+        (gradient flows here). For positions already unmasked (carried over unchanged
+        under MDLM's SUBS parameterization), the exact atom counts of the known token
+        are used directly. The two are summed and compared against the ground-truth
+        formula. Only heavy atoms are scored (see `formula_loss_atom_weights` --
+        per-token implicit hydrogen counts are not recoverable and would otherwise add
+        an unlearnable constant offset), and the per-sample squared error is normalized
+        by the number of masked positions so the loss scale doesn't drift with the
+        diffusion timestep.
+
         Args:
             logits: Model output logits of shape [batch, seq_len, vocab_size]
+            xt: Noised input ids of shape [batch, seq_len] (mask_index at masked positions)
             gt_formula_vectors: Ground truth formula vectors of shape [batch, num_atom_types]
                                (unnormalized raw atom counts)
             attention_mask: Attention mask of shape [batch, seq_len]
-        
+            sample_weights: Optional per-sample weight of shape [batch], e.g. to exclude
+                            samples with no valid tokens or a truncated (unreachable) target
+
         Returns:
-            Scalar MSE loss between predicted and ground truth atom counts
+            Scalar loss: weighted mean over the batch of the per-sample heavy-atom
+            squared error, normalized by the number of masked positions.
         """
-        # Compute token probabilities from logits
-        probs = torch.softmax(logits, dim=-1)  # [batch, seq_len, vocab_size]
-        
-        # Compute expected atom counts per position via matrix multiplication
-        # probs: [batch, seq_len, vocab_size]
-        # token_atom_counts: [vocab_size, num_atom_types]
-        # Result: [batch, seq_len, num_atom_types]
-        expected_counts_per_pos = torch.matmul(probs, self.token_atom_counts)
-        
-        # Apply attention mask to zero out padding token contributions
-        # attention_mask: [batch, seq_len] -> [batch, seq_len, 1]
-        if attention_mask is not None:
-            masked_counts = expected_counts_per_pos * attention_mask.unsqueeze(-1)
-        else:
-            masked_counts = expected_counts_per_pos
-        
-        # Sum over sequence dimension to get total predicted atom counts
-        # Result: [batch, num_atom_types]
-        total_predicted_counts = masked_counts.sum(dim=1)
-        
-        # Compute MSE loss between predicted and ground truth
-        loss = torch.nn.functional.mse_loss(total_predicted_counts, gt_formula_vectors)
-        
+        valid = attention_mask.bool() if attention_mask is not None else torch.ones_like(xt, dtype=torch.bool)
+        is_masked = (xt == self.mask_index) & valid
+
+        # Distribution the model actually uses at sampling time: mask token is
+        # forbidden. Clone + explicit -inf makes this independent of whether the
+        # reconstruction loss already mutated `logits` in place beforehand.
+        lg = logits.clone()
+        lg[..., self.mask_index] = float('-inf')
+        probs = torch.softmax(lg, dim=-1)  # [batch, seq_len, vocab_size]
+
+        # Expected atom counts at still-masked positions (gradient flows here)
+        expected_counts_per_pos = torch.matmul(probs, self.token_atom_counts)  # [batch, seq_len, num_atom_types]
+        predicted_counts = (expected_counts_per_pos * is_masked.unsqueeze(-1)).sum(dim=1)
+
+        # Exact atom counts at already-unmasked positions (no gradient)
+        known_counts = (self.token_atom_counts[xt] * (valid & ~is_masked).unsqueeze(-1)).sum(dim=1).detach()
+
+        error = (predicted_counts + known_counts - gt_formula_vectors) * self.formula_loss_atom_weights
+        num_masked = is_masked.sum(dim=1).clamp(min=1)
+        per_sample_loss = error.pow(2).sum(dim=-1) / num_masked
+
+        if sample_weights is None:
+            sample_weights = torch.ones_like(per_sample_loss)
+        weight_sum = sample_weights.sum().clamp(min=1.0)
+        loss = (per_sample_loss * sample_weights).sum() / weight_sum
+
         return loss
 
     def forward(self, x, attention_mask=None, formula=None, fingerprint=None, fingerprint_mask=None):
@@ -821,17 +851,27 @@ class DLM(L.LightningModule):
         
         # Compute formula loss (differentiable expected atom count loss)
         formula_loss_weight = self.config.training.get('formula_loss_weight', 0.0)
-        if batch.get('formula', None) is not None:
+        if formula is not None and formula_loss_weight > 0:
             encoder = self.formula_encoder
- 
+
             # Encode ground truth formulas to vectors (unnormalized)
             gt_formula_vectors = encoder.encode_batch(
                 batch['formula'], normalize='none'
             ).to(self.device)
-            
+
+            # Weight out samples with no valid tokens (e.g. excluded above) and
+            # samples truncated before their trailing [SEP] -- for those the
+            # ground-truth formula is unreachable from the (truncated) sequence.
+            valid = attention_mask.bool()
+            has_valid = valid.any(dim=1)
+            last_valid_idx = valid.sum(dim=1).clamp(min=1) - 1
+            last_token_id = input_ids.gather(1, last_valid_idx.unsqueeze(1)).squeeze(1)
+            not_truncated = last_token_id == self.tokenizer.sep_token_id
+            sample_weights = (has_valid & not_truncated).float()
+
             # Compute formula loss
-            formula_loss = self.compute_formula_loss(logits, gt_formula_vectors, attention_mask)
-            
+            formula_loss = self.compute_formula_loss(logits, xt, gt_formula_vectors, attention_mask, sample_weights)
+
             # Add weighted formula loss to total loss
             loss = loss + formula_loss_weight * formula_loss
             
