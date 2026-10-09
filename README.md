@@ -160,7 +160,8 @@ conda activate frigid
 # Apply ms-pred compatibility patches (pin: e446eeb)
 bash env/patch_ms_pred.sh
 
-# Install dependencies
+# Install a PyTorch build compatible with your CUDA/DGL environment first.
+# Then install the remaining dependencies.
 pip install -r ms-pred/requirements.txt
 pip install -e ./ms-pred
 pip install -e .
@@ -173,6 +174,7 @@ Local patches applied by `env/patch_ms_pred.sh`:
 
 - `env/patches/ms-pred-e446eeb-instrument-profile.patch`: set `ICEBERG_INSTRUMENT_PROFILE=msg` or `canopus` to match the ICEBERG checkpoint.
 - `env/patches/ms-pred-e446eeb-canopus-inference.patch`: accept CANOPUS MS/MS headers without collision energies, skip MS1 sections, fix best-energy selection, and launch ICEBERG as a Python module so inference works from the FRIGID root directory.
+- `env/patches/ms-pred-e446eeb-requirements.patch`: remove the `setuptools==59.5.0` runtime pin so installing ms-pred requirements does not downgrade the build tooling below FRIGID's `setuptools>=64` requirement.
 
 The script can be run again to apply missing patches. Use `--check` to check applicability without changing files, or `--reverse` to remove the patches.
 

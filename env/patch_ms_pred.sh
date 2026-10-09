@@ -12,6 +12,7 @@ MS_PRED="${ROOT}/ms-pred"
 PATCHES=(
   "${ROOT}/env/patches/ms-pred-e446eeb-instrument-profile.patch"
   "${ROOT}/env/patches/ms-pred-e446eeb-canopus-inference.patch"
+  "${ROOT}/env/patches/ms-pred-e446eeb-requirements.patch"
 )
 EXPECTED_SHA="e446eebb0f83e53ede016c62522ac2dd371801de"
 
