@@ -1,0 +1,25 @@
+diff --git a/src/ms_pred/common/misc_utils.py b/src/ms_pred/common/misc_utils.py
+index ed11243..bdec2e0 100644
+--- a/src/ms_pred/common/misc_utils.py
++++ b/src/ms_pred/common/misc_utils.py
+@@ -631,3 +631,3 @@ class CompositeMassSpec:
+             if return_ce:
+-                best_ce = np.array(self.keys())[np.argmax(sims)]
++                best_ce = list(self.keys())[np.argmax(sims)]
+                 return np.max(sims), float(best_ce)
+@@ -1134,2 +1134,6 @@ def parse_spectra(spectra_file: [str, list]) -> Tuple[dict, CompositeMassSpec]:
+             spectra_header = group_lines[0].split(">")[1]
++            if spectra_header in ('ms1merged', 'ms1peaks'):
++                continue  # MS1 peaks are not MS/MS fragments for ICEBERG comparison.
++            if spectra_header == 'ms2peaks':
++                spectra_header = 'nan'  # MS/MS peaks without a known collision energy.
+             peak_data = [
+diff --git a/src/ms_pred/dag_pred/iceberg_elucidation.py b/src/ms_pred/dag_pred/iceberg_elucidation.py
+index d45b4cd..1fcb670 100644
+--- a/src/ms_pred/dag_pred/iceberg_elucidation.py
++++ b/src/ms_pred/dag_pred/iceberg_elucidation.py
+@@ -298,3 +298,3 @@ def iceberg_prediction(
+         # run iceberg to generate in-silico spectrum
+-        cmd = (f'''{python_path} src/ms_pred/dag_pred/predict_smis.py \\
++        cmd = (f'''{python_path} -m ms_pred.dag_pred.predict_smis \\
+                --batch-size {batch_size} \\
