@@ -1,0 +1,8 @@
+diff --git a/requirements.txt b/requirements.txt
+index b895ee4..4cea61e 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -3,3 +3,2 @@ pathos
+ hyperopt
+-setuptools==59.5.0
+ CairoSVG

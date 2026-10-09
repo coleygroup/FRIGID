@@ -180,7 +180,7 @@ class SimpleMaskingStrategy(BaseMaskingStrategy):
                 real_spec = real_specs[real_CEs[0]]
                 real_ce = real_CEs[0]
                 
-                if real_ce is None:
+                if real_ce is None or np.isnan(float(real_ce)):
                     # Case 2 and 4: Unknown CE - find most similar spectrum among pred_specs
                     try:
                         if real_smi is not None:
@@ -214,7 +214,7 @@ class SimpleMaskingStrategy(BaseMaskingStrategy):
                 # Case 3: Multiple known real spectra
                 # Instead of merging (which can fail with inhomogeneous fragment arrays),
                 # process each CE pair separately and aggregate hallucinated peaks
-                return self._get_hallucinated_peaks_multi_ce(real_specs, pred_specs, real_CEs)
+                return self._get_hallucinated_peaks_multi_ce(real_specs, pred_specs, real_CEs, real_smi)
         except Exception as e:
             print(f"Warning [get_hallucinated_peaks]: Failed to get spectra for comparison: {e}")
             return []
@@ -227,6 +227,7 @@ class SimpleMaskingStrategy(BaseMaskingStrategy):
         real_specs: common.CompositeMassSpec,
         pred_specs: common.CompositeMassSpec,
         real_CEs: List,
+        real_smi: Optional[str] = None,
     ) -> List[Dict]:
         """
         Handle multiple collision energies by processing each CE separately
@@ -242,9 +243,15 @@ class SimpleMaskingStrategy(BaseMaskingStrategy):
             except (KeyError, Exception):
                 continue
             
-            # Find matching or closest predicted CE
+            # Match unknown CE by spectrum similarity; otherwise use matching or closest CE.
             pred_ce = None
-            if real_ce in pred_specs.keys():
+            if real_ce is None or np.isnan(float(real_ce)):
+                _, pred_ce = pred_specs.similarity(
+                    real_spec, merge_method='unknown',
+                    ignore_mass=chem_utils.mass_from_smi(real_smi) if real_smi is not None else None,
+                    return_ce=True,
+                )
+            elif real_ce in pred_specs.keys():
                 pred_ce = real_ce
             else:
                 pred_CEs = [ce for ce in pred_specs.keys() if ce is not None]
@@ -601,7 +608,7 @@ class IntensityWeightedMaskingStrategy(BaseMaskingStrategy):
                 real_spec = real_specs[real_CEs[0]]
                 real_ce = real_CEs[0]
                 
-                if real_ce is None:
+                if real_ce is None or np.isnan(float(real_ce)):
                     try:
                         if real_smi is not None:
                             real_precursor_mz = chem_utils.mass_from_smi(real_smi)
@@ -632,7 +639,7 @@ class IntensityWeightedMaskingStrategy(BaseMaskingStrategy):
                 # Case 3: Multiple known real spectra
                 # Instead of merging (which can fail with inhomogeneous fragment arrays),
                 # process each CE pair separately and aggregate hallucinated peaks
-                return self._get_hallucinated_peaks_multi_ce(real_specs, pred_specs, real_CEs)
+                return self._get_hallucinated_peaks_multi_ce(real_specs, pred_specs, real_CEs, real_smi)
         except Exception as e:
             print(f"Warning [IntensityWeighted.get_hallucinated_peaks]: Failed to get spectra: {e}")
             return []
@@ -645,6 +652,7 @@ class IntensityWeightedMaskingStrategy(BaseMaskingStrategy):
         real_specs: common.CompositeMassSpec,
         pred_specs: common.CompositeMassSpec,
         real_CEs: List,
+        real_smi: Optional[str] = None,
     ) -> List[Dict]:
         """
         Handle multiple collision energies by processing each CE separately
@@ -660,9 +668,15 @@ class IntensityWeightedMaskingStrategy(BaseMaskingStrategy):
             except (KeyError, Exception):
                 continue
             
-            # Find matching or closest predicted CE
+            # Match unknown CE by spectrum similarity; otherwise use matching or closest CE.
             pred_ce = None
-            if real_ce in pred_specs.keys():
+            if real_ce is None or np.isnan(float(real_ce)):
+                _, pred_ce = pred_specs.similarity(
+                    real_spec, merge_method='unknown',
+                    ignore_mass=chem_utils.mass_from_smi(real_smi) if real_smi is not None else None,
+                    return_ce=True,
+                )
+            elif real_ce in pred_specs.keys():
                 pred_ce = real_ce
             else:
                 pred_CEs = [ce for ce in pred_specs.keys() if ce is not None]
@@ -1162,9 +1176,15 @@ class ScoreBasedMaskingStrategy(BaseMaskingStrategy):
             except (KeyError, Exception):
                 continue
             
-            # Find matching or closest predicted CE
+            # Match unknown CE by spectrum similarity; otherwise use matching or closest CE.
             pred_ce = None
-            if real_ce in pred_specs.keys():
+            if real_ce is None or np.isnan(float(real_ce)):
+                _, pred_ce = pred_specs.similarity(
+                    real_spec, merge_method='unknown',
+                    ignore_mass=chem_utils.mass_from_smi(real_smi) if real_smi is not None else None,
+                    return_ce=True,
+                )
+            elif real_ce in pred_specs.keys():
                 pred_ce = real_ce
             else:
                 pred_CEs = [ce for ce in pred_specs.keys() if ce is not None]

@@ -157,10 +157,11 @@ git submodule update --init --recursive
 conda create -n frigid python=3.10
 conda activate frigid
 
-# Patch ms-pred for MSG/CANOPUS ICEBERG ckpts (pin: e446eeb)
+# Apply ms-pred compatibility patches (pin: e446eeb)
 bash env/patch_ms_pred.sh
 
-# Install dependencies
+# Install a PyTorch build compatible with your CUDA/DGL environment first.
+# Then install the remaining dependencies.
 pip install -r ms-pred/requirements.txt
 pip install -e ./ms-pred
 pip install -e .
@@ -169,7 +170,13 @@ pip install -e .
 pip install optuna
 ```
 
-Local patch: `env/patches/ms-pred-e446eeb-instrument-profile.patch` — set `ICEBERG_INSTRUMENT_PROFILE=msg` or `canopus` to match the ICEBERG checkpoint.
+Local patches applied by `env/patch_ms_pred.sh`:
+
+- `env/patches/ms-pred-e446eeb-instrument-profile.patch`: set `ICEBERG_INSTRUMENT_PROFILE=msg` or `canopus` to match the ICEBERG checkpoint.
+- `env/patches/ms-pred-e446eeb-canopus-inference.patch`: accept CANOPUS MS/MS headers without collision energies, skip MS1 sections, fix best-energy selection, and launch ICEBERG as a Python module so inference works from the FRIGID root directory.
+- `env/patches/ms-pred-e446eeb-requirements.patch`: remove the `setuptools==59.5.0` runtime pin so installing ms-pred requirements does not downgrade the build tooling below FRIGID's `setuptools>=64` requirement.
+
+The script can be run again to apply missing patches. Use `--check` to check applicability without changing files, or `--reverse` to remove the patches.
 
 ---
 
@@ -248,6 +255,8 @@ Key scaling parameters:
 - `--num-rounds`: number of refinement rounds R (default: 10; paper uses up to 25)
 - `--batch-size`: candidates generated per round B (default: 128)
 - The script also accepts `--top-k` (top-M candidates selected per round) and `--num-renoised` (N masked variants per candidate)
+
+For CANOPUS `.ms` files, `>ms2peaks` denotes an unknown collision energy, while `>ms1merged` and `>ms1peaks` sections are excluded from MS/MS comparisons. For each candidate, an experimental spectrum with unknown energy is matched to the ICEBERG prediction with the highest spectral similarity before refinement. Known energies use an exact match when available, otherwise the nearest predicted energy.
 
 ---
 
