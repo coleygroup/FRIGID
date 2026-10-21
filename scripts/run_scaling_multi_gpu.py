@@ -33,9 +33,9 @@ def parse_args():
 Examples:
     # Run on 4 GPUs (single server)
     python run_scaling_multi_gpu.py \\
-        --config configs/monte_spec2mol_benchmark_canopus.yaml \\
-        --mist-checkpoint checkpoints/canopus_msg-synth.pt \\
-        --dlm-checkpoint checkpoints/frigid_base.ckpt \\
+        --config configs/spec2mol_benchmark_canopus.yaml \\
+        --mist-checkpoint checkpoints/mist_canopus_aug.ckpt \\
+        --dlm-checkpoint frigid_pretrained_checkpoints/DLM.ckpt \\
         --output-dir ./scale/experiment_1 \\
         --gpus 0 1 2 3 \\
         --batch-size 128 \\
@@ -43,9 +43,9 @@ Examples:
 
     # Run on all available GPUs (single server)
     python run_scaling_multi_gpu.py \\
-        --config configs/monte_spec2mol_benchmark_canopus.yaml \\
-        --mist-checkpoint checkpoints/canopus_msg-synth.pt \\
-        --dlm-checkpoint checkpoints/frigid_base.ckpt \\
+        --config configs/spec2mol_benchmark_canopus.yaml \\
+        --mist-checkpoint checkpoints/mist_canopus_aug.ckpt \\
+        --dlm-checkpoint frigid_pretrained_checkpoints/DLM.ckpt \\
         --output-dir ./scale/experiment_1 \\
         --gpus all \\
         --batch-size 128

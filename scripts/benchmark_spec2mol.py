@@ -128,7 +128,7 @@ def get_default_config() -> dict:
             'max_peaks': 10,
         },
         'dlm': {
-            'checkpoint': 'checkpoints/dlm.ckpt',
+            'checkpoint': 'frigid_pretrained_checkpoints/DLM.ckpt',
         },
         'data': {
             'datadir': 'data/msg',
