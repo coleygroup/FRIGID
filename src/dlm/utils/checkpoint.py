@@ -28,29 +28,7 @@ from typing import Dict, Any, Optional
 import yaml
 import torch
 
-
-def get_default_encoder_config() -> Dict[str, Any]:
-    """Return default MIST encoder configuration."""
-    return {
-        'form_embedder': 'pos-cos',
-        'output_size': 4096,
-        'hidden_size': 512,
-        'spectra_dropout': 0.1,
-        'peak_attn_layers': 2,
-        'num_heads': 8,
-        'set_pooling': 'cls',
-        'refine_layers': 4,
-        'pairwise_featurization': True,
-        'embed_instrument': False,
-        'inten_transform': 'float',
-        'magma_modulo': 2048,
-        'inten_prob': 0.1,
-        'remove_prob': 0.5,
-        'cls_type': 'ms1',
-        'spec_features': 'peakformula',
-        'mol_features': 'fingerprint',
-        'top_layers': 1,
-    }
+from mist.models.checkpoint import load_mist_checkpoint
 
 
 def extract_mist_encoder_state(
@@ -60,8 +38,7 @@ def extract_mist_encoder_state(
     """
     Extract MIST encoder state_dict from checkpoint.
     
-    Handles both full training checkpoints (with 'encoder.' prefix) and 
-    standalone encoder checkpoints.
+    Loads the EMA weights from coleygroup/MIST checkpoints.
     
     Args:
         checkpoint_path: Path to MIST checkpoint
@@ -70,24 +47,7 @@ def extract_mist_encoder_state(
     Returns:
         Encoder state dictionary
     """
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"MIST checkpoint not found: {checkpoint_path}")
-
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-
-    if 'state_dict' in checkpoint:
-        state_dict = checkpoint['state_dict']
-        if any(k.startswith('encoder.') for k in state_dict.keys()):
-            encoder_state = {
-                k.replace('encoder.', ''): v 
-                for k, v in state_dict.items() 
-                if k.startswith('encoder.')
-            }
-            if encoder_state:
-                return encoder_state
-        return state_dict
-    else:
-        return checkpoint
+    return load_mist_checkpoint(checkpoint_path, device=device).state_dict()
 
 
 def extract_dlm_decoder_state(
@@ -117,7 +77,6 @@ def pack_checkpoint(
     mist_checkpoint: str,
     dlm_checkpoint: str,
     output_path: str,
-    encoder_config: Optional[Dict[str, Any]] = None,
     fingerprint_config: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
@@ -127,24 +86,21 @@ def pack_checkpoint(
         mist_checkpoint: Path to MIST encoder checkpoint
         dlm_checkpoint: Path to DLM decoder checkpoint
         output_path: Output path for unified checkpoint
-        encoder_config: MIST encoder hyperparameters (uses defaults if None)
         fingerprint_config: Fingerprint settings (uses defaults if None)
         
     Returns:
         Path to created checkpoint
     """
     print(f"Loading MIST encoder from: {mist_checkpoint}")
-    encoder_state = extract_mist_encoder_state(mist_checkpoint)
+    encoder = load_mist_checkpoint(mist_checkpoint)
+    encoder_state = encoder.state_dict()
+    encoder_config = encoder.model_config
     print(f"  Loaded {len(encoder_state)} encoder parameters")
 
     print(f"Loading DLM decoder from: {dlm_checkpoint}")
     decoder_checkpoint = extract_dlm_decoder_state(dlm_checkpoint)
     print(f"  Loaded decoder checkpoint")
 
-    # Use defaults if not provided
-    if encoder_config is None:
-        encoder_config = get_default_encoder_config()
-    
     if fingerprint_config is None:
         fingerprint_config = {
             'bits': 4096,
@@ -156,6 +112,7 @@ def pack_checkpoint(
     united_checkpoint = {
         'checkpoint_type': 'spec2mol_united',
         'version': '1.0',
+        'encoder_type': 'scaled_mist',
         'encoder_state_dict': encoder_state,
         'encoder_config': encoder_config,
         'decoder_checkpoint': decoder_checkpoint,
@@ -231,7 +188,7 @@ def main():
     )
     parser.add_argument(
         '--mist-checkpoint', type=str, required=True,
-        help='Path to MIST encoder checkpoint (.pt)'
+        help='Path to coleygroup/MIST EMA checkpoint (.ckpt)'
     )
     parser.add_argument(
         '--dlm-checkpoint', type=str, required=True,
@@ -243,19 +200,12 @@ def main():
     )
     parser.add_argument(
         '--config', type=str, default=None,
-        help='Optional config YAML to embed encoder hyperparameters'
+        help='Optional config YAML for fingerprint settings'
     )
 
     args = parser.parse_args()
     
     config = load_config(args.config)
-    
-    encoder_config = get_default_encoder_config()
-    if config and 'mist_encoder' in config:
-        encoder_config.update({
-            k: v for k, v in config['mist_encoder'].items() 
-            if k != 'checkpoint'
-        })
     
     fingerprint_config = {'bits': 4096, 'radius': 2, 'threshold': 0.172}
     if config and 'fingerprint' in config:
@@ -265,7 +215,6 @@ def main():
         mist_checkpoint=args.mist_checkpoint,
         dlm_checkpoint=args.dlm_checkpoint,
         output_path=args.output,
-        encoder_config=encoder_config,
         fingerprint_config=fingerprint_config,
     )
 

@@ -37,6 +37,7 @@ import torch
 import torch.nn as nn
 
 from mist.models import SpectraEncoderGrowing
+from mist.models.scaled import ScaledMIST
 from dlm.model import DLM
 
 # Suppress RDKit warnings
@@ -371,27 +372,31 @@ class Spec2MolModel(nn.Module):
 
         # Load encoder
         encoder_config = checkpoint['encoder_config']
-        encoder = SpectraEncoderGrowing(
-            form_embedder=encoder_config.get('form_embedder', 'pos-cos'),
-            output_size=encoder_config.get('output_size', 4096),
-            hidden_size=encoder_config.get('hidden_size', 512),
-            spectra_dropout=encoder_config.get('spectra_dropout', 0.1),
-            peak_attn_layers=encoder_config.get('peak_attn_layers', 2),
-            num_heads=encoder_config.get('num_heads', 8),
-            set_pooling=encoder_config.get('set_pooling', 'cls'),
-            refine_layers=encoder_config.get('refine_layers', 4),
-            pairwise_featurization=encoder_config.get('pairwise_featurization', True),
-            embed_instrument=encoder_config.get('embed_instrument', False),
-            inten_transform=encoder_config.get('inten_transform', 'float'),
-            magma_modulo=encoder_config.get('magma_modulo', 2048),
-            inten_prob=encoder_config.get('inten_prob', 0.1),
-            remove_prob=encoder_config.get('remove_prob', 0.5),
-            cls_type=encoder_config.get('cls_type', 'ms1'),
-            spec_features=encoder_config.get('spec_features', 'peakformula'),
-            mol_features=encoder_config.get('mol_features', 'fingerprint'),
-            top_layers=encoder_config.get('top_layers', 1),
-        )
-        encoder.load_state_dict(checkpoint['encoder_state_dict'], strict=strict)
+        if checkpoint.get('encoder_type') == 'scaled_mist':
+            encoder = ScaledMIST(**encoder_config)
+            encoder.load_state_dict(checkpoint['encoder_state_dict'], strict=True)
+        else:
+            encoder = SpectraEncoderGrowing(
+                form_embedder=encoder_config.get('form_embedder', 'pos-cos'),
+                output_size=encoder_config.get('output_size', 4096),
+                hidden_size=encoder_config.get('hidden_size', 512),
+                spectra_dropout=encoder_config.get('spectra_dropout', 0.1),
+                peak_attn_layers=encoder_config.get('peak_attn_layers', 2),
+                num_heads=encoder_config.get('num_heads', 8),
+                set_pooling=encoder_config.get('set_pooling', 'cls'),
+                refine_layers=encoder_config.get('refine_layers', 4),
+                pairwise_featurization=encoder_config.get('pairwise_featurization', True),
+                embed_instrument=encoder_config.get('embed_instrument', False),
+                inten_transform=encoder_config.get('inten_transform', 'float'),
+                magma_modulo=encoder_config.get('magma_modulo', 2048),
+                inten_prob=encoder_config.get('inten_prob', 0.1),
+                remove_prob=encoder_config.get('remove_prob', 0.5),
+                cls_type=encoder_config.get('cls_type', 'ms1'),
+                spec_features=encoder_config.get('spec_features', 'peakformula'),
+                mol_features=encoder_config.get('mol_features', 'fingerprint'),
+                top_layers=encoder_config.get('top_layers', 1),
+            )
+            encoder.load_state_dict(checkpoint['encoder_state_dict'], strict=strict)
         print("✓ Loaded MIST encoder")
 
         # Load decoder

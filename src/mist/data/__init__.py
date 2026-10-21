@@ -27,8 +27,21 @@ from .datasets import (
     get_paired_spectra,
 )
 from .splitter import PresetSpectraSplitter
-from .hdf5_dataset import HDF5SpectrumDataset, HDF5Spec2MolDataModule
-from .iceberg_dataset import IcebergMultiPartDataModule, IcebergEpochCallback
+from importlib import import_module
+
+
+def __getattr__(name):
+    optional_modules = {
+        "HDF5SpectrumDataset": "hdf5_dataset",
+        "HDF5Spec2MolDataModule": "hdf5_dataset",
+        "IcebergMultiPartDataModule": "iceberg_dataset",
+        "IcebergEpochCallback": "iceberg_dataset",
+    }
+    if name in optional_modules:
+        value = getattr(import_module(f"{__name__}.{optional_modules[name]}"), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "Spectra",

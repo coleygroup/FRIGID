@@ -58,7 +58,7 @@ from dlm.utils.benchmark_utils import (
     load_token_model,
     predict_token_count,
 )
-from mist.models import SpectraEncoderGrowing
+from mist.models.checkpoint import load_mist_checkpoint
 from mist.data import (
     get_paired_spectra,
     get_paired_featurizer,
@@ -122,25 +122,10 @@ def get_default_config() -> dict:
     """Return default configuration."""
     return {
         'mist_encoder': {
-            'checkpoint': 'checkpoints/mist_encoder.ckpt',
-            'hidden_size': 512,
-            'peak_attn_layers': 2,
-            'num_heads': 8,
-            'spectra_dropout': 0.1,
-            'output_size': 4096,
-            'form_embedder': 'pos-cos',
-            'set_pooling': 'cls',
-            'refine_layers': 4,
-            'pairwise_featurization': True,
-            'embed_instrument': False,
-            'inten_transform': 'float',
-            'magma_modulo': 2048,
-            'inten_prob': 0.1,
-            'remove_prob': 0.5,
+            'checkpoint': 'checkpoints/mist_msg_aug.ckpt',
             'cls_type': 'ms1',
-            'spec_features': 'peakformula',
-            'mol_features': 'fingerprint',
-            'top_layers': 1,
+            'inten_transform': 'float',
+            'max_peaks': 10,
         },
         'dlm': {
             'checkpoint': 'checkpoints/dlm.ckpt',
@@ -228,48 +213,8 @@ def merge_config_with_args(config: dict, args) -> dict:
 
 
 def load_mist_encoder(config: dict, device: torch.device) -> torch.nn.Module:
-    """Load MIST encoder from checkpoint."""
-    checkpoint_path = config['checkpoint']
-    print(f"\nLoading MIST encoder from: {checkpoint_path}")
-
-    encoder = SpectraEncoderGrowing(
-        form_embedder=config.get('form_embedder', 'pos-cos'),
-        output_size=config.get('output_size', 4096),
-        hidden_size=config.get('hidden_size', 512),
-        spectra_dropout=config.get('spectra_dropout', 0.1),
-        peak_attn_layers=config.get('peak_attn_layers', 2),
-        num_heads=config.get('num_heads', 8),
-        set_pooling=config.get('set_pooling', 'cls'),
-        refine_layers=config.get('refine_layers', 4),
-        pairwise_featurization=config.get('pairwise_featurization', True),
-        embed_instrument=config.get('embed_instrument', False),
-        inten_transform=config.get('inten_transform', 'float'),
-        magma_modulo=config.get('magma_modulo', 2048),
-        inten_prob=config.get('inten_prob', 0.1),
-        remove_prob=config.get('remove_prob', 0.5),
-        cls_type=config.get('cls_type', 'ms1'),
-        spec_features=config.get('spec_features', 'peakformula'),
-        mol_features=config.get('mol_features', 'fingerprint'),
-        top_layers=config.get('top_layers', 1),
-    )
-
-    if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        if 'state_dict' in checkpoint:
-            state_dict = checkpoint['state_dict']
-            state_dict = {k.replace('encoder.', ''): v for k, v in state_dict.items() if k.startswith('encoder.')}
-            if not state_dict:
-                state_dict = checkpoint['state_dict']
-        else:
-            state_dict = checkpoint
-        encoder.load_state_dict(state_dict, strict=False)
-        print('✓ Loaded MIST encoder weights')
-    else:
-        print(f"WARNING: MIST checkpoint not found: {checkpoint_path}")
-
-    encoder = encoder.to(device)
-    encoder.eval()
-    return encoder
+    """Load the configured coleygroup/MIST EMA encoder."""
+    return load_mist_checkpoint(config['checkpoint'], device=device)
 
 
 def load_dlm_sampler(config: dict, use_shared_cross_attention: bool = False) -> Sampler:
@@ -357,6 +302,7 @@ def load_spec_data(
         inten_transform=encoder_config.get('inten_transform', 'float'),
         inten_prob=encoder_config.get('inten_prob', 0.1),
         remove_prob=encoder_config.get('remove_prob', 0.5),
+        max_peaks=encoder_config.get('max_peaks', 10),
     )
 
     return SpectraMolDataset(split_data, featurizer), split_data

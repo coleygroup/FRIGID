@@ -20,8 +20,14 @@ This module provides spectra encoding capabilities for mass spectrometry data,
 adapted for use with the FRIGID molecular generation framework.
 """
 
-from . import utils
-from . import models
-from . import data
+from importlib import import_module
+
+
+def __getattr__(name):
+    if name in __all__:
+        module = import_module(f"{__name__}.{name}")
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = ["utils", "models", "data"]

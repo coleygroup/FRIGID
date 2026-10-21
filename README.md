@@ -219,13 +219,13 @@ Evaluate FRIGID-base end-to-end on NPLIB1 or MassSpecGym:
 # NPLIB1 / CANOPUS benchmark
 python scripts/benchmark_spec2mol.py \
     --config configs/spec2mol_benchmark_canopus.yaml \
-    --mist-checkpoint checkpoints/mist_canopus.pt \
+    --mist-checkpoint checkpoints/mist_canopus_aug.ckpt \
     --dlm-checkpoint checkpoints/frigid_base.ckpt
 
 # MassSpecGym benchmark
 python scripts/benchmark_spec2mol.py \
     --config configs/spec2mol_benchmark_msg.yaml \
-    --mist-checkpoint checkpoints/mist_msg.pt \
+    --mist-checkpoint checkpoints/mist_msg_aug.ckpt \
     --dlm-checkpoint checkpoints/frigid_base.ckpt
 ```
 
@@ -236,7 +236,7 @@ Run the full FRIGID pipeline with cycle-consistent refinement over multiple roun
 ```bash
 python scripts/spec2mol_scaling.py \
     --config configs/spec2mol_benchmark_canopus.yaml \
-    --mist-checkpoint checkpoints/mist_canopus.pt \
+    --mist-checkpoint checkpoints/mist_canopus_aug.ckpt \
     --dlm-checkpoint checkpoints/frigid_base.ckpt \
     --iceberg-gen-ckpt checkpoints/iceberg/dag_gen.ckpt \
     --iceberg-inten-ckpt checkpoints/iceberg/dag_inten.ckpt \
@@ -278,7 +278,9 @@ A two-stage model (fragment generator + intensity predictor) trained on bond-bre
 
 ## Pretrained Checkpoints
 
-Pretrained checkpoints for the FRIGID decoder, the MIST encoders, and the ICEBERG models are available [here](https://zenodo.org/records/19685145).
+Pretrained FRIGID decoders and ICEBERG models are available [here](https://zenodo.org/records/19685145). MIST encoder checkpoints are available [here](https://zenodo.org/records/23303289), with the complete training code in [coleygroup/MIST](https://github.com/coleygroup/MIST). The MIST checkpoints, `mist_{canopus,msg}_{noaug,aug}.ckpt`, cover CANOPUS and MassSpecGym, with (`aug`) or without (`noaug`) synthetic training spectra.
+
+Specify the MIST checkpoint for the chosen dataset using `--mist-checkpoint`, as shown in the benchmark examples above.
 
 ## License
 

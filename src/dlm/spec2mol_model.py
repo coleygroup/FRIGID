@@ -42,6 +42,7 @@ from bionemo.moco.schedules.noise.continuous_noise_transforms import LogLinearEx
 from bionemo.moco.distributions.prior import DiscreteMaskedPrior
 
 from mist.models.spectra_encoder import SpectraEncoderGrowing
+from mist.models.checkpoint import load_mist_checkpoint, configure_encoder_finetuning
 from dlm.utils.ema import ExponentialMovingAverage
 from dlm.utils.utils_data import get_tokenizer
 from dlm.utils.utils_save import clean_checkpoint, fast_forward_info
@@ -335,39 +336,9 @@ class Spec2MolModel(L.LightningModule):
             self.ema = None
 
     def _load_encoder_weights(self, path: str):
-        """Load pretrained encoder weights."""
-        logging.info(f"Loading encoder weights from {path}")
-        state_dict = torch.load(path, map_location='cpu', weights_only=False)
-        # Handle different checkpoint formats
-        if 'state_dict' in state_dict:
-            state_dict = state_dict['state_dict']
-        
-        # Filter for encoder keys and strip 'encoder.' prefix if present
-        encoder_state = {}
-        for k, v in state_dict.items():
-            if k.startswith('encoder.'):
-                new_key = k.replace('encoder.', '', 1)
-            elif not any(k.startswith(p) for p in ['backbone.', 'conditioner.', 'formula_conditioner.', 'fingerprint_conditioner.']):
-                new_key = k
-            else:
-                continue
-            encoder_state[new_key] = v
-        
-        # Handle key naming differences between checkpoint formats
-        remapped_state = {}
-        for k, v in encoder_state.items():
-            new_key = k
-            # Remap spectra_X to spectra_encoder.X
-            if k.startswith('spectra_0.'):
-                new_key = k.replace('spectra_0.', 'spectra_encoder.0.', 1)
-            elif k.startswith('spectra_1.'):
-                new_key = k.replace('spectra_1.', 'spectra_encoder.1.', 1)
-            elif k.startswith('spectra_2.'):
-                new_key = k.replace('spectra_2.', 'spectra_encoder.2.', 1)
-            remapped_state[new_key] = v
-        self.encoder.load_state_dict(remapped_state, strict=True)
+        """Load the coleygroup/MIST EMA encoder and its saved architecture."""
+        self.encoder = load_mist_checkpoint(path)
 
-    
     def _load_decoder_weights(self, path: str):
         """Load pretrained decoder weights."""
         logging.info(f"Loading decoder weights from {path}")
@@ -966,44 +937,9 @@ class Spec2MolModel(L.LightningModule):
 
 # ==================== Fine-tuning Utilities ====================
 
-def apply_encoder_finetuning(model: Spec2MolModel, strategy: Optional[str]):
-    """Apply fine-tuning strategy to encoder.
-    
-    Strategies:
-    - freeze: Freeze all encoder parameters
-    - ft-unfold: Only train unfold layers
-    - freeze-unfold: Freeze unfold layers
-    - ft-transformer: Only train transformer
-    - freeze-transformer: Freeze transformer
-    """
-    if strategy is None:
-        return
-    
-    if strategy == 'freeze':
-        for param in model.encoder.parameters():
-            param.requires_grad = False
-    elif strategy == 'ft-unfold':
-        for name, param in model.encoder.named_parameters():
-            layer = name.split('.')[1] if len(name.split('.')) > 1 else ''
-            if layer != '2':
-                param.requires_grad = False
-    elif strategy == 'freeze-unfold':
-        for name, param in model.encoder.named_parameters():
-            layer = name.split('.')[1] if len(name.split('.')) > 1 else ''
-            if layer == '2':
-                param.requires_grad = False
-    elif strategy == 'ft-transformer':
-        for name, param in model.encoder.named_parameters():
-            layer = name.split('.')[1] if len(name.split('.')) > 1 else ''
-            if layer != '0':
-                param.requires_grad = False
-    elif strategy == 'freeze-transformer':
-        for name, param in model.encoder.named_parameters():
-            layer = name.split('.')[1] if len(name.split('.')) > 1 else ''
-            if layer == '0':
-                param.requires_grad = False
-    else:
-        raise NotImplementedError(f'Unknown encoder strategy: {strategy}')
+def apply_encoder_finetuning(model, strategy):
+    """Configure the MIST encoder's trainable parameters."""
+    configure_encoder_finetuning(model.encoder, strategy)
 
 
 def apply_decoder_finetuning(model: Spec2MolModel, strategy: Optional[str]):

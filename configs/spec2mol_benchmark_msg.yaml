@@ -4,7 +4,6 @@
 #   python scripts/benchmark_spec2mol.py --config configs/spec2mol_benchmark_msg.yaml
 #
 # Key differences from CANOPUS:
-#   - MIST encoder: hidden_size=640, magma_modulo=2048 (Large Model)
 #   - Data paths point to MassSpecGym dataset
 
 # CANOPUS data paths
@@ -16,28 +15,13 @@ data:
   subform_folder: "/path/to/data/msg/subformulae/default_subformulae"
   hf_cache_dir: /path/to/data/safes/
 
-# MIST encoder configuration
+# Architecture and EMA weights are read from the coleygroup/MIST checkpoint.
+# Download: https://zenodo.org/records/23303289
 mist_encoder:
-  checkpoint: "/path/to/checkpoints/mist_msg.pt"
-  hidden_size: 640              # MSG Large Model (CANOPUS uses 640)
-  magma_modulo: 2048             # MSG Large Model (CANOPUS uses 512)
-  peak_attn_layers: 2
-  num_heads: 8
-  spectra_dropout: 0.1
-  output_size: 4096
-  form_embedder: "pos-cos"
-  set_pooling: "cls"
-  refine_layers: 4
-  pairwise_featurization: true
-  embed_instrument: false
-  inten_transform: "float"
-  inten_prob: 0.1
-  remove_prob: 0.5
+  checkpoint: "checkpoints/mist_msg_aug.ckpt"
   cls_type: "ms1"
-  spec_features: "peakformula"
-  mol_features: "fingerprint"
-  top_layers: 1
-  max_peaks: null
+  inten_transform: "float"
+  max_peaks: 10
 
 # DLM decoder (same as CANOPUS - decoder is shared)
 dlm:

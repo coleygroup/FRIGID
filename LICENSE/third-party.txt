@@ -21,3 +21,7 @@ URL: https://github.com/SeulLee05/MOOD/blob/main/scorer/docking.py
 Name: PMO
 License: 3rd_party/LICENSE_PMO
 URL: https://github.com/wenhao-gao/mol_opt/blob/main/run.py
+
+Name: MIST inference model
+License: ../src/mist/models/scaled/LICENSE
+URL: https://github.com/coleygroup/MIST
