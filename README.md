@@ -1,5 +1,10 @@
 # FRIGID: Scaling Diffusion-Based Molecular Generation from Mass Spectra at Training and Inference Time
 
+> [!IMPORTANT]
+> **Updated MIST encoders and benchmark results.** In the previous release, MIST training for MassSpecGym used synthetic spectra of PubChem molecules selected to match or resemble the chemical formulae of test molecules. Although exact test structures were excluded, this selection still used test-set information.
+>
+> We have replaced the MIST encoders and repeated the FRIGID and MolForge evaluations using MIST 2M-aug on NPLIB1 and MIST 4M-aug on MassSpecGym. These encoders are trained on the respective experimental training splits, augmented with GLACIER spectra for 2 million sampled PubChem molecules and the official 4 million MassSpecGym molecules. The revised results supersede those previously reported; both are presented [below](#results). The checkpoints and complete training code are available in [coleygroup/MIST](https://github.com/coleygroup/MIST).
+
 This is the codebase for our preprint [FRIGID: Scaling Diffusion-Based Molecular Generation from Mass Spectra at Training and Inference Time](https://arxiv.org/abs/2604.16648). **FRIGID** is a diffusion language model (DLM) framework for *de novo* structural elucidation from tandem mass spectra (MS/MS). Given an observed spectrum, FRIGID generates molecular structures as SAFE sequences conditioned on intermediate fingerprint representations and chemical formulae, with optional iterative refinement guided by a forward fragmentation model (ICEBERG).
 
 <p align="center">
@@ -22,9 +27,9 @@ FRIGID addresses two key limitations of prior work: poor scalability at training
 
 1. **FRIGID-base**: A masked diffusion language model (MDLM) that generates SAFE molecular strings conditioned on predicted Morgan fingerprints (via MIST) and chemical formulae (via cross-attention). Trained on up to 230 million unlabeled structures, FRIGID-base achieves strong results through pretraining-scale improvements alone.
 
-2. **ICEBERG-guided inference-time scaling**: A cycle-consistent refinement pipeline that uses ICEBERG (a forward fragmentation model) to simulate spectra of generated candidates, identify hallucinated fragments, and iteratively remask and re-denoise inconsistent substructures. This yields a clear log-linear relationship between inference compute and identification accuracy.
+2. **ICEBERG-guided inference-time scaling**: A cycle-consistent refinement pipeline that uses ICEBERG (a forward fragmentation model) to simulate spectra of generated candidates, identify hallucinated fragments, and iteratively remask and re-denoise inconsistent substructures. Additional refinement rounds improve identification accuracy on both benchmarks.
 
-3. **State-of-the-art results** on NPLIB1 and MassSpecGym benchmarks, more than doubling the Top-1 accuracy of prior methods on NPLIB1 and surpassing 15% Top-1 accuracy on MassSpecGym with inference-time scaling.
+3. **Benchmark performance**: With the revised MIST encoders and 10 rounds of refinement, FRIGID reaches 14.16% Top-1 accuracy on NPLIB1 and 9.05% on MassSpecGym, compared with 13.31% and 8.21% for FRIGID-base.
 
 ---
 
@@ -60,24 +65,54 @@ After initial generation, FRIGID applies iterative spectrum-structure cycle-cons
 
 ## Results
 
-Performance on NPLIB1 and MassSpecGym (known chemical formula setting):
+Performance in the known chemical formula setting. FRIGID and our MolForge reimplementation use MIST 2M-aug on NPLIB1 and MIST 4M-aug on MassSpecGym. FRIGID-base denotes initial generation; FRIGID includes 10 rounds of ICEBERG-guided refinement.
 
 <p align="center">
-  <img src="assets/fig3_inference_scaling.png" width="780">
+  <img src="assets/fig3_inference_scaling.png" width="1000" alt="Revised Top-1 accuracy versus inference time on NPLIB1 and MassSpecGym">
   <br>
-  <em>Top-1 accuracy vs. inference compute on NPLIB1 (left) and MassSpecGym (right). FRIGID exhibits clear log-linear scaling across refinement rounds.</em>
+  <em>Top-1 accuracy versus inference time on NPLIB1 (left) and MassSpecGym (right), using the revised MIST encoders. The blue dashed curves trace initial generation through 10 rounds of refinement.</em>
 </p>
 
-| Model | NPLIB1 Top-1 Acc | NPLIB1 Top-10 Acc | MSG Top-1 Acc | MSG Top-10 Acc |
-|---|---|---|---|---|
-| MIST + MSNovelist | 5.40% | 11.04% | 0.00% | 0.00% |
-| MS-BART | 7.45% | 10.99% | 1.07% | 1.11% |
-| DiffMS | 8.34% | 15.44% | 2.30% | 4.25% |
-| MIST + MolForge | 2.24% | 5.11% | 10.73% | 14.48% |
-| **FRIGID-base (ours)** | **19.80%** | **24.41%** | **16.09%** | **18.19%** |
-| **FRIGID (ours)** | **25.03%** | **33.37%** | **18.29%** | **22.00%** |
+The tables report the revised results alongside the earlier manuscript values. Rows marked *previous* are retained for transparency and shown with strikethrough; they are superseded by the revised comparison. **Bold** indicates the best value among current results. † denotes our MolForge reimplementation.
 
-FRIGID is also **20× faster** than DiffMS at inference (6.58 s/spectrum vs. 131.2 s/spectrum on a single NVIDIA 6000 Ada GPU), enabling practical large-scale inference-time scaling.
+### NPLIB1
+
+| Model | Top-1 Acc ↑ | Top-1 MCES ↓ | Top-1 Tanimoto ↑ | Top-10 Acc ↑ | Top-10 MCES ↓ | Top-10 Tanimoto ↑ |
+|---|---:|---:|---:|---:|---:|---:|
+| Spec2Mol | 0.00% | 48.57 | 0.12 | 0.00% | 17.58 | 0.16 |
+| MADGEN | 2.10% | 20.56 | 0.22 | 2.39% | 12.69 | 0.27 |
+| MIST + Neuraldecipher | 2.32% | 10.26 | 0.35 | 6.11% | 8.53 | 0.43 |
+| MIST + MolForge† | 5.62% | 20.72 | 0.43 | 11.36% | 10.55 | 0.52 |
+| *MIST + MolForge† (previous)* | ~~2.24%~~ | ~~14.16~~ | ~~0.40~~ | ~~5.11%~~ | ~~10.96~~ | ~~0.47~~ |
+| MIST + MSNovelist | 5.40% | 13.10 | 0.34 | 11.04% | 8.57 | 0.44 |
+| MS-BART | 7.45% | 9.66 | 0.44 | 10.99% | 8.31 | 0.51 |
+| DiffMS | 8.34% | 10.46 | 0.35 | 15.44% | 8.54 | 0.47 |
+| **FRIGID-base** | 13.31% | 7.58 | 0.50 | 20.15% | 6.16 | 0.56 |
+| *FRIGID-base (previous)* | ~~19.80%~~ | ~~7.88~~ | ~~0.54~~ | ~~24.41%~~ | ~~6.20~~ | ~~0.61~~ |
+| **FRIGID** | **14.16%** | **7.16** | **0.51** | **25.27%** | **5.79** | **0.58** |
+| *FRIGID (previous)* | ~~25.03%~~ | ~~7.10~~ | ~~0.58~~ | ~~33.37%~~ | ~~5.56~~ | ~~0.64~~ |
+
+### MassSpecGym
+
+| Model | Top-1 Acc ↑ | Top-1 MCES ↓ | Top-1 Tanimoto ↑ | Top-10 Acc ↑ | Top-10 MCES ↓ | Top-10 Tanimoto ↑ |
+|---|---:|---:|---:|---:|---:|---:|
+| MIST + MSNovelist | 0.00% | 39.84 | 0.06 | 0.00% | 18.83 | 0.15 |
+| Spec2Mol | 0.00% | 36.78 | 0.12 | 0.00% | 36.02 | 0.16 |
+| MIST + Neuraldecipher | 0.00% | 22.93 | 0.14 | 0.00% | 21.76 | 0.16 |
+| MADGEN | 1.31% | 27.47 | 0.20 | 1.54% | 16.84 | 0.26 |
+| MS-BART | 1.26% | 16.47 | 0.23 | 1.28% | 15.12 | 0.28 |
+| DiffMS | 2.30% | 13.96 | 0.28 | 4.25% | 11.68 | 0.39 |
+| FOAM (DiffMS + PubChem) | 1.50% | **12.21** | 0.35 | 10.28% | **6.06** | **0.53** |
+| MIST + MolForge† | 3.29% | 31.77 | 0.31 | 5.65% | 16.67 | 0.40 |
+| *MIST + MolForge† (previous)* | ~~10.73%~~ | ~~22.15~~ | ~~0.37~~ | ~~14.48%~~ | ~~17.88~~ | ~~0.41~~ |
+| **FRIGID-base** | 8.21% | 13.16 | 0.38 | 9.82% | 11.65 | 0.43 |
+| *FRIGID-base (previous)* | ~~16.09%~~ | ~~15.02~~ | ~~0.41~~ | ~~18.19%~~ | ~~11.95~~ | ~~0.46~~ |
+| **FRIGID** | **9.05%** | 12.60 | **0.39** | **12.23%** | 11.41 | 0.43 |
+| *FRIGID (previous)* | ~~18.29%~~ | ~~13.49~~ | ~~0.43~~ | ~~22.00%~~ | ~~11.65~~ | ~~0.47~~ |
+
+MS-BART accuracies on MassSpecGym use 2D InChIKey matching. The previous MassSpecGym MolForge results used MIST vDiffMS at inference batch size 1. The paper's appendices, “MIST Encoders and MolForge Evaluation” and “MIST Training,” describe the encoder changes and report the FRIGID comparison between manuscript versions.
+
+On NPLIB1, **FRIGID-base is 20× faster than DiffMS** (6.58 versus 131.2 seconds per spectrum on a single NVIDIA 6000 Ada GPU). FRIGID with 10 refinement rounds takes 41.3 seconds per spectrum.
 
 ---
 
@@ -240,12 +275,12 @@ python scripts/spec2mol_scaling.py \
     --dlm-checkpoint checkpoints/frigid_base.ckpt \
     --iceberg-gen-ckpt checkpoints/iceberg/dag_gen.ckpt \
     --iceberg-inten-ckpt checkpoints/iceberg/dag_inten.ckpt \
-    --num-rounds 10 \
+    --num-rounds 11 \
     --batch-size 128
 ```
 
 Key scaling parameters:
-- `--num-rounds`: number of refinement rounds R (default: 10; paper uses up to 25)
+- `--num-rounds`: total generation rounds, including initial generation; use 11 for the 10 refinement rounds reported above
 - `--batch-size`: candidates generated per round B (default: 128)
 - The script also accepts `--top-k` (top-M candidates selected per round) and `--num-renoised` (N masked variants per candidate)
 
@@ -255,12 +290,12 @@ Key scaling parameters:
 
 ### FRIGID-base MDLM
 
-The decoder is a 12-layer BERT Transformer (hidden size 768, 12 heads, FFN dimension 3072) modified with cross-attention sublayers in each block:
+The model evaluated in the paper uses a 12-layer BERT Transformer (hidden size 896, 14 heads, FFN dimension 3072) with cross-attention sublayers in each block:
 
 | Component | Details |
 |---|---|
-| Backbone | BERT, 12 layers, d=768, H=12 |
-| Total parameters | 182.2M |
+| Backbone | BERT, 12 layers, d=896, H=14 |
+| Total parameters | 247.0M |
 | Vocabulary | BPE-tokenized SAFE, \|V\|=1880 |
 | Max token length | 256 |
 | Formula encoder | Per-element count embedding (30 elements) |
