@@ -9,11 +9,11 @@
 
 # CANOPUS data paths
 data:
-  datadir: "/path/to/data/canopus"
-  labels_file: "/path/to/data/canopus/labels.tsv"
-  split_file: "/path/to/data/canopus/splits/canopus_hplus_100_0.tsv"
-  spec_folder: "/path/to/data/canopus/spec_files"
-  subform_folder: "/path/to/data/canopus/subformulae/subformulae_default"
+  datadir: "data/canopus"
+  labels_file: "data/canopus/labels.tsv"
+  split_file: "data/canopus/splits/canopus_hplus_100_0.tsv"
+  spec_folder: "data/canopus/spec_files"
+  subform_folder: "data/canopus/subformulae/subformulae_default"
 
 # Architecture and EMA weights are read from the coleygroup/MIST checkpoint.
 # Download: https://zenodo.org/records/23303289
@@ -25,7 +25,7 @@ mist_encoder:
 
 # DLM decoder (same as MSG - decoder is shared)
 dlm:
-  checkpoint: "/path/to/checkpoints/dlm.ckpt"
+  checkpoint: "frigid_pretrained_checkpoints/DLM.ckpt"
 
 # Fingerprint settings
 fingerprint:

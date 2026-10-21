@@ -165,8 +165,10 @@ frigid/
 │   ├── msg/                            # MassSpecGym dataset
 │   └── exclude_inchikeys.csv           # Test/val InChIKeys excluded from training
 │
-├── checkpoints/                        # Pretrained model checkpoints
-│   └── iceberg/                        # ICEBERG model weights
+├── checkpoints/                        # Separately downloaded MIST EMA checkpoints
+├── frigid_pretrained_checkpoints/       # Extracted FRIGID release archive
+│   ├── DLM.ckpt                        # FRIGID decoder
+│   └── checkpoints/iceberg/             # CANOPUS and MSG ICEBERG weights
 │
 └── assets/                             # Paper figures
     ├── fig1_model_overview.png
@@ -206,6 +208,26 @@ Local patch: `env/patches/ms-pred-e446eeb-instrument-profile.patch` — set `ICE
 
 ---
 
+## Data and checkpoint setup
+
+Run the following commands from the repository root. CANOPUS data comes from the original MIST data record; MassSpecGym data comes from the DiffMS v3 record. Both retain the directory layout expected by the benchmark and token-model scripts.
+
+```bash
+bash data_processing/01_download_canopus_data.sh
+bash data_processing/02_download_msg_data.sh
+
+wget https://zenodo.org/records/23543494/files/frigid_pretrained_checkpoints.tar.gz
+tar -xzf frigid_pretrained_checkpoints.tar.gz
+
+mkdir -p checkpoints
+wget -O checkpoints/mist_canopus_aug.ckpt https://zenodo.org/records/23303289/files/mist_canopus_aug.ckpt
+wget -O checkpoints/mist_msg_aug.ckpt https://zenodo.org/records/23303289/files/mist_msg_aug.ckpt
+```
+
+The FRIGID archive contains `frigid_pretrained_checkpoints/DLM.ckpt` and four ICEBERG checkpoints under `frigid_pretrained_checkpoints/checkpoints/iceberg/`. Use `iceberg_canopus_model1.ckpt` / `iceberg_canopus_model2.ckpt` for CANOPUS and `iceberg_msg_model1.ckpt` / `iceberg_msg_model2.ckpt` for MassSpecGym (generator / intensity model, respectively). MIST encoders are downloaded separately from the coleygroup/MIST release.
+
+The FRIGID archive does not contain benchmark datasets, SAFE pretraining data, or NGBoost token-length models. The dataset scripts above prepare the benchmark data; SAFE pretraining uses `datamol-io/safe-gpt` on Hugging Face, and token-length models are trained as described below. Pass a trained length model with `--token-model token_models/models/<model>.joblib` when running benchmarks or scaling.
+
 ## Usage
 
 ### 1. Pretraining FRIGID-base
@@ -230,6 +252,7 @@ FRIGID-base requires an NGBoost model to predict SAFE sequence lengths from mole
 
 ```bash
 cd token_models/
+mkdir -p data
 
 # Option A: train directly on benchmark data (fast)
 python train_opt_canopus.py   # for NPLIB1
@@ -240,6 +263,7 @@ bash download_pubchem.sh
 python generate_training_data.py
 python train_opt_canopus_pubchem.py
 python train_opt_msg_pubchem.py
+cd ..
 ```
 
 Trained models are saved to `token_models/models/`.
@@ -253,13 +277,13 @@ Evaluate FRIGID-base end-to-end on NPLIB1 or MassSpecGym:
 python scripts/benchmark_spec2mol.py \
     --config configs/spec2mol_benchmark_canopus.yaml \
     --mist-checkpoint checkpoints/mist_canopus_aug.ckpt \
-    --dlm-checkpoint checkpoints/frigid_base.ckpt
+    --dlm-checkpoint frigid_pretrained_checkpoints/DLM.ckpt
 
 # MassSpecGym benchmark
 python scripts/benchmark_spec2mol.py \
     --config configs/spec2mol_benchmark_msg.yaml \
     --mist-checkpoint checkpoints/mist_msg_aug.ckpt \
-    --dlm-checkpoint checkpoints/frigid_base.ckpt
+    --dlm-checkpoint frigid_pretrained_checkpoints/DLM.ckpt
 ```
 
 ### 4. ICEBERG Inference-Time Scaling
@@ -270,9 +294,9 @@ Run the full FRIGID pipeline with cycle-consistent refinement over multiple roun
 python scripts/spec2mol_scaling.py \
     --config configs/spec2mol_benchmark_canopus.yaml \
     --mist-checkpoint checkpoints/mist_canopus_aug.ckpt \
-    --dlm-checkpoint checkpoints/frigid_base.ckpt \
-    --iceberg-gen-ckpt checkpoints/iceberg/dag_gen.ckpt \
-    --iceberg-inten-ckpt checkpoints/iceberg/dag_inten.ckpt \
+    --dlm-checkpoint frigid_pretrained_checkpoints/DLM.ckpt \
+    --iceberg-gen-ckpt frigid_pretrained_checkpoints/checkpoints/iceberg/iceberg_canopus_model1.ckpt \
+    --iceberg-inten-ckpt frigid_pretrained_checkpoints/checkpoints/iceberg/iceberg_canopus_model2.ckpt \
     --num-rounds 11 \
     --batch-size 128
 ```
@@ -311,7 +335,7 @@ A two-stage model (fragment generator + intensity predictor) trained on bond-bre
 
 ## Pretrained Checkpoints
 
-Pretrained FRIGID decoders and ICEBERG models are available [here](https://zenodo.org/records/19685145). MIST encoder checkpoints are available [here](https://zenodo.org/records/23303289), with the complete training code in [coleygroup/MIST](https://github.com/coleygroup/MIST). The MIST checkpoints, `mist_{canopus,msg}_{noaug,aug}.ckpt`, cover CANOPUS and MassSpecGym, with (`aug`) or without (`noaug`) synthetic training spectra.
+Pretrained FRIGID decoders and ICEBERG models are available [here](https://zenodo.org/records/23543494). MIST encoder checkpoints are available [here](https://zenodo.org/records/23303289), with the complete training code in [coleygroup/MIST](https://github.com/coleygroup/MIST). The MIST checkpoints, `mist_{canopus,msg}_{noaug,aug}.ckpt`, cover CANOPUS and MassSpecGym, with (`aug`) or without (`noaug`) synthetic training spectra.
 
 Specify the MIST checkpoint for the chosen dataset using `--mist-checkpoint`, as shown in the benchmark examples above.
 
