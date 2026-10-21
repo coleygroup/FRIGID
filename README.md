@@ -83,7 +83,6 @@ The tables report the revised results alongside the earlier manuscript values. R
 | MADGEN | 2.10% | 20.56 | 0.22 | 2.39% | 12.69 | 0.27 |
 | MIST + Neuraldecipher | 2.32% | 10.26 | 0.35 | 6.11% | 8.53 | 0.43 |
 | MIST + MolForge† | 5.62% | 20.72 | 0.43 | 11.36% | 10.55 | 0.52 |
-| *MIST + MolForge† (previous)* | ~~2.24%~~ | ~~14.16~~ | ~~0.40~~ | ~~5.11%~~ | ~~10.96~~ | ~~0.47~~ |
 | MIST + MSNovelist | 5.40% | 13.10 | 0.34 | 11.04% | 8.57 | 0.44 |
 | MS-BART | 7.45% | 9.66 | 0.44 | 10.99% | 8.31 | 0.51 |
 | DiffMS | 8.34% | 10.46 | 0.35 | 15.44% | 8.54 | 0.47 |
@@ -104,7 +103,6 @@ The tables report the revised results alongside the earlier manuscript values. R
 | DiffMS | 2.30% | 13.96 | 0.28 | 4.25% | 11.68 | 0.39 |
 | FOAM (DiffMS + PubChem) | 1.50% | **12.21** | 0.35 | 10.28% | **6.06** | **0.53** |
 | MIST + MolForge† | 3.29% | 31.77 | 0.31 | 5.65% | 16.67 | 0.40 |
-| *MIST + MolForge† (previous)* | ~~10.73%~~ | ~~22.15~~ | ~~0.37~~ | ~~14.48%~~ | ~~17.88~~ | ~~0.41~~ |
 | **FRIGID-base** | 8.21% | 13.16 | 0.38 | 9.82% | 11.65 | 0.43 |
 | *FRIGID-base (previous)* | ~~16.09%~~ | ~~15.02~~ | ~~0.41~~ | ~~18.19%~~ | ~~11.95~~ | ~~0.46~~ |
 | **FRIGID** | **9.05%** | 12.60 | **0.39** | **12.23%** | 11.41 | 0.43 |
